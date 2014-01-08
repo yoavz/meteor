@@ -34,15 +34,14 @@ module.exports.time = function (/*arguments*/) {
 
 var initialized = false;
 
-module.exports.initialize = function (library) {
+module.exports.initialize = function () {
   if (initialized)
     return;
 
   // Note we carefully don't require unipackage until initialization
   // time.  (Otherwise we'd have circular require calls when we wanted
   // to profile watch.js).
-  Profile = require('./unipackage.js').load({
-    library: library,
+  Profile = require('./uniload.js').load({
     packages: ['tinyprofile']
   }).tinyprofile.Profile;
 

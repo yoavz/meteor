@@ -23,7 +23,8 @@ var ROOT_PACKAGES = [
   'package-version-parser',
   'boilerplate-generator',
   'webapp-hashing',
-  'xmlbuilder'
+  'xmlbuilder',
+  'tinyprofile'
 ];
 
 // Load isopacks into the currently running node.js process. Use

@@ -170,6 +170,7 @@ var compiler = require('./compiler.js');
 var tropohouse = require('./tropohouse.js');
 var catalog = require('./catalog.js');
 var packageVersionParser = require('./package-version-parser.js');
+var Profile = require('./profile.js');
 
 // files to ignore when bundling. node has no globs, so use regexps
 exports.ignoreFiles = [
@@ -472,7 +473,7 @@ _.extend(Target.prototype, {
   // - addCacheBusters: if true, make all files cacheable by adding
   //   unique query strings to their URLs. unlikely to be of much use
   //   on server targets.
-  make: function (options) {
+  make: Profile("make target", function (options) {
     var self = this;
     buildmessage.assertInCapture();
 
@@ -508,7 +509,7 @@ _.extend(Target.prototype, {
       self._addCacheBusters("js");
       self._addCacheBusters("css");
     }
-  },
+  }),
 
   // Determine the packages to load, create Unibuilds for
   // them, put them in load order, save in unibuilds.
@@ -520,7 +521,7 @@ _.extend(Target.prototype, {
   // - packages: an array of packages (or, properly speaking, unibuilds)
   //   to include. Each element should either be a Isopack object or a
   //   package name as a string
-  _determineLoadOrder: function (options) {
+  _determineLoadOrder: Profile("determine load order", function (options) {
     var self = this;
     buildmessage.assertInCapture();
 
@@ -622,11 +623,11 @@ _.extend(Target.prototype, {
       // Now add it, after its ordered dependencies.
       add(needed[first]);
     }
-  },
+  }),
 
   // Process all of the sorted unibuilds (which includes running the JavaScript
   // linker).
-  _emitResources: function () {
+  _emitResources: Profile("emit resources", function () {
     var self = this;
 
     var isWeb = archinfo.matches(self.arch, "web");
@@ -754,10 +755,10 @@ _.extend(Target.prototype, {
       _.extend(self.pluginProviderPackageDirs,
                unibuild.pkg.pluginProviderPackageDirs);
     });
-  },
+  }),
 
   // Minify the JS in this target
-  minifyJs: function (minifiers) {
+  minifyJs: Profile("minifyJs", function (minifiers) {
     var self = this;
 
     var allJs;
@@ -787,7 +788,7 @@ _.extend(Target.prototype, {
 
     self.js = [new File({ info: 'minified js', data: new Buffer(allJs, 'utf8') })];
     self.js[0].setUrlToHash(".js");
-  },
+  }),
 
   // For each resource of the given type, make it cacheable by adding
   // a query string to the URL based on its hash.
@@ -969,7 +970,7 @@ _.extend(ClientTarget.prototype, {
   // Lints CSS files and merges them into one file, fixing up source maps and
   // pulling any @import directives up to the top since the CSS spec does not
   // allow them to appear in the middle of a file.
-  mergeCss: function () {
+  mergeCss: Profile("mergeCss", function () {
     var self = this;
     var minifiers = uniload.load({
       packages: ['minifiers']
@@ -981,7 +982,7 @@ _.extend(ClientTarget.prototype, {
 
     var cssAsts = _.map(self.css, function (file) {
       var filename = file.url.replace(/^\//, '');
-      originals[filename] = file;
+        originals[filename] = file;
       try {
         var parseOptions = { source: filename, position: true };
         var ast = CssTools.parseCss(file.contents('utf8'), parseOptions);
@@ -989,7 +990,7 @@ _.extend(ClientTarget.prototype, {
       } catch (e) {
         buildmessage.error(e.message, { file: filename });
         return { type: "stylesheet", stylesheet: { rules: [] },
-                 filename: filename };
+          filename: filename };
       }
 
       return ast;
@@ -1070,7 +1071,7 @@ _.extend(ClientTarget.prototype, {
   //
   // Returns the path (relative to 'builder') of the control file for
   // the target
-  write: function (builder) {
+  write: Profile("write client target", function (builder) {
     var self = this;
 
     builder.reserve("program.json");
@@ -1151,7 +1152,7 @@ _.extend(ClientTarget.prototype, {
       manifest: manifest
     });
     return "program.json";
-  }
+  })
 });
 
 
@@ -1205,7 +1206,7 @@ _.extend(JsImage.prototype, {
   // XXX throw an error if the image includes any "app-style" code
   // that is built to put symbols in the global namespace rather than
   // in a compartment of Package
-  load: function (bindings) {
+  load: Profile("load jsImage", function (bindings) {
     var self = this;
     var ret = {};
 
@@ -1224,7 +1225,7 @@ _.extend(JsImage.prototype, {
         if (result && ! encoding)
           // Sadly, this copies in Node 0.10.
           result = new Uint8Array(result);
-        callback(err, result);
+          callback(err, result);
       };
 
       if (!assets || !_.has(assets, assetPath)) {
@@ -1323,13 +1324,13 @@ _.extend(JsImage.prototype, {
     });
 
     return ret;
-  },
+  }),
 
   // Write this image out to disk
   //
   // Returns the path (relative to 'builder') of the control file for
   // the image
-  write: function (builder) {
+  write: Profile("write JS image", function (builder) {
     var self = this;
 
     builder.reserve("program.json");
@@ -1450,13 +1451,13 @@ _.extend(JsImage.prototype, {
       load: load
     });
     return "program.json";
-  }
+  })
 });
 
 // Create a JsImage by loading a bundle of format
 // 'javascript-image-pre1' from disk (eg, previously written out with
 // write()). `dir` is the path to the control file.
-JsImage.readFromDisk = function (controlFilePath) {
+JsImage.readFromDisk = Profile("jsimage:read disk", function (controlFilePath) {
   var ret = new JsImage;
   var json = JSON.parse(fs.readFileSync(controlFilePath));
   var dir = path.dirname(controlFilePath);
@@ -1477,9 +1478,9 @@ JsImage.readFromDisk = function (controlFilePath) {
       if (! (node_modules in ret.nodeModulesDirectories)) {
         ret.nodeModulesDirectories[node_modules] =
           new NodeModulesDirectory({
-            sourcePath: node_modules,
-            preferredBundlePath: item.node_modules
-          });
+          sourcePath: node_modules,
+          preferredBundlePath: item.node_modules
+        });
       }
       nmd = ret.nodeModulesDirectories[node_modules];
     }
@@ -1495,7 +1496,7 @@ JsImage.readFromDisk = function (controlFilePath) {
       rejectBadPath(item.sourceMap);
       loadItem.sourceMap = fs.readFileSync(
         path.join(dir, item.sourceMap), 'utf8');
-      loadItem.sourceMapRoot = item.sourceMapRoot;
+        loadItem.sourceMapRoot = item.sourceMapRoot;
     }
 
     if (!_.isEmpty(item.assets)) {
@@ -1509,7 +1510,7 @@ JsImage.readFromDisk = function (controlFilePath) {
   });
 
   return ret;
-};
+});
 
 var JsImageTarget = function (options) {
   var self = this;
@@ -1577,7 +1578,7 @@ _.extend(ServerTarget.prototype, {
   //
   // Returns the path (relative to 'builder') of the control file for
   // the plugin
-  write: function (builder, options) {
+  write: Profile("write server target", function (builder, options) {
     var self = this;
 
     // Pick a start script name
@@ -1661,10 +1662,10 @@ _.extend(ServerTarget.prototype, {
                                 executable: true });
 
     return scriptName;
-  }
+  })
 });
 
-var writeFile = function (file, builder) {
+var writeFile = Profile("write files", function (file, builder) {
   if (! file.targetPath)
     throw new Error("No targetPath?");
   var contents = file.contents();
@@ -1675,7 +1676,7 @@ var writeFile = function (file, builder) {
   // (rather than just serving all of the files in a certain
   // directories)
   builder.write(file.targetPath, { data: file.contents() });
-};
+});
 
 // Writes a target a path in 'programs'
 var writeTargetToPath = function (name, target, outputPath, options) {
@@ -1721,7 +1722,7 @@ var writeTargetToPath = function (name, target, outputPath, options) {
 // - builtBy: vanity identification string to write into metadata
 // - controlProgram: name of the control program (should be a target name)
 // - releaseName: The Meteor release version
-var writeSiteArchive = function (targets, outputPath, options) {
+var writeSiteArchive = Profile("writeSiteArchive", function (targets, outputPath, options) {
   var builder = new Builder({
     outputPath: outputPath,
     // This is a bit of a hack, but it means that things like node_modules
@@ -1813,7 +1814,7 @@ var writeSiteArchive = function (targets, outputPath, options) {
     builder.abort();
     throw e;
   }
-};
+});
 
 ///////////////////////////////////////////////////////////////////////////////
 // Main
@@ -1867,7 +1868,7 @@ var writeSiteArchive = function (targets, outputPath, options) {
  * will point somewhere else -- into the app (if any) whose packages
  * you are testing!
  */
-exports.bundle = function (options) {
+exports._bundle = function (options) {
   // bundler.bundle is never called by uniload, so it always uses
   // the complete catalog.
   var whichCatalog = catalog.complete;
@@ -1911,7 +1912,7 @@ exports.bundle = function (options) {
 
     var controlProgram = null;
 
-    var makeClientTarget = function (app, webArch) {
+    var makeClientTarget = Profile("mk client target", function (app, webArch) {
       var client = new ClientTarget({
         packageLoader: packageLoader,
         arch: webArch
@@ -1924,7 +1925,7 @@ exports.bundle = function (options) {
       });
 
       return client;
-    };
+    });
 
     var makeBlankClientTarget = function () {
       var client = new ClientTarget({
@@ -1939,7 +1940,7 @@ exports.bundle = function (options) {
       return client;
     };
 
-    var makeServerTarget = function (app, clientTargets) {
+    var makeServerTarget = Profile("mk server target", function (app, clientTargets) {
       var targetOptions = {
         packageLoader: packageLoader,
         arch: serverArch,
@@ -1956,13 +1957,12 @@ exports.bundle = function (options) {
       });
 
       return server;
-    };
+    });
 
     // Include default targets, unless there's a no-default-targets file in the
     // top level of the app. (This is a very hacky interface which will
     // change. Note, eg, that .meteor/packages is confusingly ignored in this
     // case.)
-
     var includeDefaultTargets = watch.readAndWatchFile(
       serverWatchSet, path.join(appDir, 'no-default-targets')) === null;
 
@@ -2191,6 +2191,13 @@ exports.bundle = function (options) {
   };
 };
 
+exports.bundle = function (options) {
+  Profile.initialize();
+  return Profile.run("bundle", function () {
+    return exports._bundle(options);
+  });
+};
+
 // Make a JsImage object (a complete, linked, ready-to-go JavaScript
 // program). It can either be loaded into memory with load(), which
 // returns the `Package` object inside the plugin's namespace, or
@@ -2227,7 +2234,7 @@ exports.bundle = function (options) {
 // It would be nice to have a way to say "make this package anonymous"
 // without also saying "make its namespace the same as the global
 // namespace." It should be an easy refactor,
-exports.buildJsImage = function (options) {
+exports.buildJsImage = Profile("build js image", function (options) {
   buildmessage.assertInCapture();
   if (options.npmDependencies && ! options.npmDir)
     throw new Error("Must indicate .npm directory to use");
@@ -2271,7 +2278,7 @@ exports.buildJsImage = function (options) {
     watchSet: target.getWatchSet(),
     pluginProviderPackageDirs: target.getPluginProviderPackageDirs()
   };
-};
+});
 
 // Load a JsImage from disk (that was previously written by calling
 // write() on a JsImage). `controlFilePath` is the path to the control
