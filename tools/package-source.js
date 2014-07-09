@@ -206,7 +206,7 @@ var PackageSource = function () {
   self.serveRoot = null;
 
   // Package metadata. Keys are 'summary' and 'internal' and
-  // 'githubUrl'. Currently all of these are optional.
+  // 'git'. Currently all of these are optional.
   self.metadata = {};
 
   // Package version as a semver string. Optional; not all packages
@@ -437,7 +437,7 @@ _.extend(PackageSource.prototype, {
       describe: function (options) {
         _.each(options, function (value, key) {
           if (key === "summary" || key === "internal" ||
-              key === "githubUrl") {
+              key === "git") {
             self.metadata[key] = value;
           } else if (key === "version") {
             // XXX validate that version parses -- and that it doesn't

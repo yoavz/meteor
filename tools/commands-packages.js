@@ -764,8 +764,8 @@ main.registerCommand({
                   + lastVersion.description || unknown);
     }
     var maintain = "Maintained by " + _.pluck(record.maintainers, 'username');
-    if (lastVersion.githubUrl) {
-      maintain = maintain + " at " + lastVersion.githubUrl;
+    if (lastVersion.git) {
+      maintain = maintain + " at " + lastVersion.git;
     }
     if (record.homepage) {
       maintain = maintain + "\nYou can find more information at "
