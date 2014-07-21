@@ -286,11 +286,6 @@ selftest.define("sync",  function () {
   run.waitSecs(15);
   run.match("Done");
 
-  // XXX: DO NOT DO THIS.
-  run = s.run("search", releaseTrack);
-  run.waitSecs(20);
-  run.match(releaseTrack);
-
   // Create a package that has a versionsFrom for the just-published release.
   var newPack = fullPackageName + "2";
   s.createPackage(newPack, "package-of-two-versions");
@@ -304,11 +299,6 @@ selftest.define("sync",  function () {
 
   // Clear the local data cache.
  // cleanLocalCache();
-
-  // XXX: DO NOT DO THIS.
-  run = s.run("search", releaseTrack);
-  run.waitSecs(20);
-  run.match(releaseTrack);
 
   // Try to publish the package.
   s.cd(newPack, function() {
