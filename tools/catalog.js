@@ -102,12 +102,18 @@ _.extend(ServerCatalog.prototype, {
 
     if (thrownError)
       throw thrownError;
+
+ console.log("THEN REFRESH LOCAL");
+    // Then refresh the non-server catalog here.
+    catalog.complete.refresh();
   },
 
   // Refresh the packages in the catalog. Prints a warning if we cannot connect
   // to the package server, and intend to.
   _refresh: function () {
     var self = this;
+
+console.log("STARTING TO REFRESH OFFICIAL CATALOG");
 
     var localData = packageClient.loadCachedServerData();
     var allPackageData;
@@ -132,7 +138,7 @@ _.extend(ServerCatalog.prototype, {
       self._insertServerPackages(allPackageData);
     }
 
-    // XXX: Then refresh the non-server catalog here.
+console.log("MAYBE WROTE DATA.JSON");
   }
 });
 
@@ -315,6 +321,8 @@ _.extend(CompleteCatalog.prototype, {
     var self = this;
     options = options || {};
 
+console.log("CALLED REFRESH ON LOCAL CATALOG");
+
     // We need to limit the rate of refresh, or, at least, prevent any sort of
     // loops.
     if (self.refreshing ||
@@ -323,6 +331,8 @@ _.extend(CompleteCatalog.prototype, {
       return;
     }
     self.refreshing = true;
+
+console.log("ACTUALLY REFRESHING ON LOCAL CATALOG");
 
     try {
       self.reset();
