@@ -318,17 +318,17 @@ _.extend(CompleteCatalog.prototype, {
     var self = this;
     options = options || {};
 
-    // We are a local catalog, but we meant to refresh the other one. Return,
-    // because it is going to make a call to refresh us when done.
-    if (options.unknownItem) {
-      catalog.official.refresh();
-      return;
-    }
-
     // We need to limit the rate of refresh, or, at least, prevent any sort of
     // loops. ForceRefresh will override either one.
     if (!options.forceRefresh &&
         (catalog.official._refreshFutures || self.refreshing)) {
+      return;
+    }
+
+    // We are a local catalog, but we meant to refresh the other one. Return,
+    // because it is going to make a call to refresh us when done.
+    if (options.unknownItem) {
+      catalog.official.refresh();
       return;
     }
 
