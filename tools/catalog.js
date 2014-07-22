@@ -72,7 +72,6 @@ _.extend(ServerCatalog.prototype, {
   refresh: function () {
     var self = this;
     self._requireInitialized();
-console.log("Trying to refresh the official catalog");
 
     if (self._refreshFutures) {
       var f = new Future;
@@ -104,7 +103,6 @@ console.log("Trying to refresh the official catalog");
     if (thrownError)
       throw thrownError;
 
- console.log("THEN REFRESH LOCAL");
     // Then refresh the non-server catalog here.
     catalog.complete.refresh({ forceRefresh: true });
   },
@@ -113,8 +111,6 @@ console.log("Trying to refresh the official catalog");
   // to the package server, and intend to.
   _refresh: function () {
     var self = this;
-
-console.log("STARTING TO REFRESH OFFICIAL CATALOG");
 
     var localData = packageClient.loadCachedServerData();
     var allPackageData;
@@ -316,33 +312,32 @@ _.extend(CompleteCatalog.prototype, {
   //   anyway. When we are using hot code push, we may be restarting the app
   //   because of a local package change that impacts that catalog. Don't wait
   //   on the official catalog to refresh data.json, in this case.
+  // - unknownItem: we actually meant to refresh the official catalog, so go do
+  //   that instead.
   refresh: function (options) {
     var self = this;
     options = options || {};
 
-console.log("CALLED REFRESH ON LOCAL CATALOG", self.refreshing,
-         !options.forceRefresh);
-
+    // We are a local catalog, but we meant to refresh the other one. Return,
+    // because it is going to make a call to refresh us when done.
     if (options.unknownItem) {
       catalog.official.refresh();
+      return;
     }
 
     // We need to limit the rate of refresh, or, at least, prevent any sort of
-    // loops. (That's why we don't override self.refreshing, only the official
-    // catalog refresh).
-    if ( (self.refreshing && !options.forceRefresh) ||
- //   if ( self.refreshing ||
-        (catalog.official._refreshFutures &&
-        !options.forceRefresh)) {
+    // loops. ForceRefresh will override either one.
+    if (!options.forceRefresh &&
+        (catalog.official._refreshFutures || self.refreshing)) {
       return;
     }
+
     self.refreshing = true;
 
     try {
       self.reset();
       var localData = packageClient.loadCachedServerData();
       self._insertServerPackages(localData);
-console.log("LOADED LOCAL SERVER DATA");
 
       self._recomputeEffectiveLocalPackages();
       self._addLocalPackageOverrides();
@@ -353,7 +348,6 @@ console.log("LOADED LOCAL SERVER DATA");
 
       self.refreshing = false;
     }
-    console.log("LOCAL CATALOG FINISHED REFRESHING");
 
   },
 
