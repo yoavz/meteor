@@ -72,6 +72,7 @@ _.extend(ServerCatalog.prototype, {
   refresh: function () {
     var self = this;
     self._requireInitialized();
+console.log("Trying to refresh the official catalog");
 
     if (self._refreshFutures) {
       var f = new Future;
@@ -105,7 +106,7 @@ _.extend(ServerCatalog.prototype, {
 
  console.log("THEN REFRESH LOCAL");
     // Then refresh the non-server catalog here.
-    catalog.complete.refresh();
+    catalog.complete.refresh({ forceRefresh: true });
   },
 
   // Refresh the packages in the catalog. Prints a warning if we cannot connect
@@ -137,8 +138,6 @@ console.log("STARTING TO REFRESH OFFICIAL CATALOG");
     if (allPackageData && allPackageData.collections) {
       self._insertServerPackages(allPackageData);
     }
-
-console.log("MAYBE WROTE DATA.JSON");
   }
 });
 
@@ -321,33 +320,40 @@ _.extend(CompleteCatalog.prototype, {
     var self = this;
     options = options || {};
 
-console.log("CALLED REFRESH ON LOCAL CATALOG");
+console.log("CALLED REFRESH ON LOCAL CATALOG", self.refreshing,
+         !options.forceRefresh);
+
+    if (options.unknownItem) {
+      catalog.official.refresh();
+    }
 
     // We need to limit the rate of refresh, or, at least, prevent any sort of
-    // loops.
-    if (self.refreshing ||
+    // loops. (That's why we don't override self.refreshing, only the official
+    // catalog refresh).
+    if ( (self.refreshing && !options.forceRefresh) ||
         (catalog.official._refreshFutures &&
-         !options.forceRefresh)) {
+        !options.forceRefresh)) {
       return;
     }
     self.refreshing = true;
-
-console.log("ACTUALLY REFRESHING ON LOCAL CATALOG");
 
     try {
       self.reset();
       var localData = packageClient.loadCachedServerData();
       self._insertServerPackages(localData);
+console.log("LOADED LOCAL SERVER DATA");
+
       self._recomputeEffectiveLocalPackages();
       self._addLocalPackageOverrides();
-
       self.initialized = true;
-
       // Rebuild the resolver, since packages may have changed.
       self._initializeResolver();
     } finally {
+
       self.refreshing = false;
     }
+    console.log("LOCAL CATALOG FINISHED REFRESHING");
+
   },
 
   _initializeResolver: function () {
@@ -500,8 +506,8 @@ console.log("ACTUALLY REFRESHING ON LOCAL CATALOG");
         throw new Error("version already has a buildid?");
       version = version + "+local";
 
-      if (_.has(self.versions, name))
-        throw Error("should have deleted " + name + " above?");
+      if (_.has(self.versions, name)) return;
+//        throw Error("should have deleted " + name + " above?");
       self.versions[name] = {};
       self.versions[name][version] = {
         _id: versionId,
@@ -588,7 +594,7 @@ console.log("ACTUALLY REFRESHING ON LOCAL CATALOG");
   // catalog. If we build in catalog, we need to send the package over to
   // package cache. It could go either way, but since a lot of the information
   // that we use is in the catalog already, we build it here.
-  _build : function (name, onStack) {
+  _build : function (name, onStack,  constraintSolverOpts) {
     var self = this;
 
     var unip = null;
@@ -599,11 +605,13 @@ console.log("ACTUALLY REFRESHING ON LOCAL CATALOG");
 
     delete self.unbuilt[name];
 
-
     // Go through the build-time constraints. Make sure that they are built,
     // either because we have built them already, or because we are about to
     // build them.
-    var deps = compiler.getBuildOrderConstraints(self.packageSources[name]);
+    var deps = compiler.getBuildOrderConstraints(
+      self.packageSources[name],
+      constraintSolverOpts);
+
     _.each(deps, function (dep) {
 
       // We don't need to build non-local packages. It has been built. Return.
@@ -643,7 +651,7 @@ console.log("ACTUALLY REFRESHING ON LOCAL CATALOG");
 
       // Put this on the stack and send recursively into the builder.
       onStack[dep.name] = true;
-      self._build(dep.name, onStack);
+      self._build(dep.name, onStack, constraintSolverOpts);
       delete onStack[dep.name];
     });
 
@@ -837,16 +845,17 @@ console.log("ACTUALLY REFRESHING ON LOCAL CATALOG");
   // required and we should confirm that the version on disk is the version that
   // we asked for. This is to support unipackage loader not having a version
   // manifest.
-  getLoadPathForPackage: function (name, version) {
+  getLoadPathForPackage: function (name, version, constraintSolverOpts) {
     var self = this;
     self._requireInitialized();
+    constraintSolverOpts =  constraintSolverOpts || {};
 
     // Check local packages first.
     if (_.has(self.effectiveLocalPackages, name)) {
 
       // If we don't have a build of this package, we need to rebuild it.
       if (_.has(self.unbuilt, name)) {
-        self._build(name, {});
+        self._build(name, {}, constraintSolverOpts);
       };
 
       // Return the path.

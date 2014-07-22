@@ -74,8 +74,12 @@ var load = function (options) {
     // it gets around to it.
     var loader = new packageLoader.PackageLoader({
       versions: null,
-      uniloadDir: files.getUniloadDir()
+      uniloadDir: files.getUniloadDir(),
+      constraintSolverOpts: { ignoreProjectDeps: true }
     });
+
+// var project = require("./project.js").project;
+// project.viableDepSource = false;
 
     // Build the bundler image.
     //
@@ -90,6 +94,8 @@ var load = function (options) {
       use: options.packages || []
     }).image;
     ret = image.load(env);
+
+// project.viableDepSource = true;
 
     // Run any user startup hooks.
     while (env.__meteor_bootstrap__.startupHooks.length) {

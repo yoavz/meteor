@@ -297,7 +297,7 @@ selftest.define("sync local catalog",  function () {
     var packOpen = s.read("package.js");
     packOpen = packOpen + "\nPackage.onUse(function(api) { \n" +
       "api.versionsFrom(\"" + releaseTrack + "@0.9\");\n" +
-      "api.use(\"" + fullPackageName + "\"); });";
+      "api.use(\"" + fullPackageName + "@1.0.0\"); });";
     s.write("package.js", packOpen);
   });
 
