@@ -78,9 +78,6 @@ var load = function (options) {
       constraintSolverOpts: { ignoreProjectDeps: true }
     });
 
-// var project = require("./project.js").project;
-// project.viableDepSource = false;
-
     // Build the bundler image.
     //
     // Passing in dependency versions doesn't really make any sense here. We
@@ -94,8 +91,6 @@ var load = function (options) {
       use: options.packages || []
     }).image;
     ret = image.load(env);
-
-// project.viableDepSource = true;
 
     // Run any user startup hooks.
     while (env.__meteor_bootstrap__.startupHooks.length) {

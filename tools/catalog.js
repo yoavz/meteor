@@ -331,6 +331,7 @@ console.log("CALLED REFRESH ON LOCAL CATALOG", self.refreshing,
     // loops. (That's why we don't override self.refreshing, only the official
     // catalog refresh).
     if ( (self.refreshing && !options.forceRefresh) ||
+ //   if ( self.refreshing ||
         (catalog.official._refreshFutures &&
         !options.forceRefresh)) {
       return;
@@ -506,8 +507,13 @@ console.log("LOADED LOCAL SERVER DATA");
         throw new Error("version already has a buildid?");
       version = version + "+local";
 
-      if (_.has(self.versions, name)) return;
-//        throw Error("should have deleted " + name + " above?");
+      // Maybe we were refreshing within a refresh, as part of a hack. Clear and
+      // reload. (Actually we could probably just return and trust that the
+      // previous record is correct.)
+      if (_.has(self.versions, name)) {
+        delete self.versions[name];
+      }
+
       self.versions[name] = {};
       self.versions[name][version] = {
         _id: versionId,
@@ -556,7 +562,7 @@ console.log("LOADED LOCAL SERVER DATA");
 
   // Returns the latest unipackage build if the package has already been
   // compiled and built in the directory, and null otherwise.
-  _maybeGetUpToDateBuild : function (name) {
+  _maybeGetUpToDateBuild : function (name, constraintSolverOpts) {
     var self = this;
     var sourcePath = self.effectiveLocalPackages[name];
     var buildDir = path.join(sourcePath, '.build.' + name);
@@ -570,7 +576,8 @@ console.log("LOADED LOCAL SERVER DATA");
         // Ignore unipackage-pre1 builds
         return null;
       }
-      if (compiler.checkUpToDate(self.packageSources[name], unip)) {
+      if (compiler.checkUpToDate(
+          self.packageSources[name], unip, constraintSolverOpts)) {
         return unip;
       }
     }
@@ -596,7 +603,6 @@ console.log("LOADED LOCAL SERVER DATA");
   // that we use is in the catalog already, we build it here.
   _build : function (name, onStack,  constraintSolverOpts) {
     var self = this;
-
     var unip = null;
 
     if (! _.has(self.unbuilt, name)) {
@@ -638,7 +644,7 @@ console.log("LOADED LOCAL SERVER DATA");
       if (_.has(onStack, dep.name)) {
         // Allow a circular dependency if the other thing is already
         // built and doesn't need to be rebuilt.
-        unip = self._maybeGetUpToDateBuild(dep.name);
+        unip = self._maybeGetUpToDateBuild(dep.name, constraintSolverOpts);
         if (unip) {
           return;
         } else {
@@ -657,7 +663,7 @@ console.log("LOADED LOCAL SERVER DATA");
 
     // Now build this package if it needs building
     var sourcePath = self.effectiveLocalPackages[name];
-    unip = self._maybeGetUpToDateBuild(name);
+    unip = self._maybeGetUpToDateBuild(name, constraintSolverOpts);
 
     if (! unip) {
       // Didn't have a build or it wasn't up to date. Build it.

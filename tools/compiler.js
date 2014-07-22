@@ -947,7 +947,9 @@ compiler.getBuildOrderConstraints = function (
 // identical code). True if we have dependency info and it
 // says that the package is up-to-date. False if a source file or
 // build-time dependency has changed.
-compiler.checkUpToDate = function (packageSource, unipackage) {
+compiler.checkUpToDate = function (
+    packageSource, unipackage, constraintSolverOpts) {
+
   if (unipackage.forceNotUpToDate) {
     return false;
   }
@@ -962,7 +964,9 @@ compiler.checkUpToDate = function (packageSource, unipackage) {
   // `buildTimeDeps`, by comparing versions (including build
   // identifiers). For direct dependencies, we only care if the set of
   // direct dependencies that provide plugins has changed.
-  var buildTimeDeps = determineBuildTimeDependencies(packageSource);
+  var buildTimeDeps = determineBuildTimeDependencies(
+      packageSource, constraintSolverOpts);
+
   var sourcePluginProviders = getPluginProviders(
     buildTimeDeps.directDependencies
   );
