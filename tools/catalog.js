@@ -328,8 +328,9 @@ _.extend(CompleteCatalog.prototype, {
 
     // We are a local catalog, but we meant to refresh the other one. Return,
     // because it is going to make a call to refresh us when done.
-    if (options.unknownItem && self._unknownItem !== options.unknownItem) {
+    if (options.unknownItem && self._unknownItem === options.unknownItem) {
       self._unknownItem = options.unknownItem;
+console.log("refresh:", options.unknownItem, self._unknownItem);
       catalog.official.refresh();
     }
 

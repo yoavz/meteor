@@ -31,7 +31,7 @@ selftest.define("publish-and-search", ["slow"], function () {
       " });";
     s.write("package.js", packOpen);
     run = s.run("publish", "--create");
-    run.waitSecs(15);
+    run.waitSecs(20);
     run.matchErr("Unknown release");
   });
 

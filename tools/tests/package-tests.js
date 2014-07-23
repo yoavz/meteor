@@ -312,7 +312,7 @@ selftest.define("sync local catalog",  function () {
   // to compile itself.
   s.cd(newPack, function() {
     run = s.run("publish", "--create");
-    run.waitSecs(15);
+    run.waitSecs(20);
     run.match("Done");
   });
 
