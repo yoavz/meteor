@@ -173,6 +173,12 @@ var CompleteCatalog = function () {
   // XXX: use a future in the future maybe
   self.refreshing = false;
 
+  // A small (size 1) cache of items that we couldn't find. When we can't find
+  // an item, we try to contact the server, and then, if we still can't find it,
+  // stop. Possibly, we should actually use a better way of rate-limiting
+  // refreshes, but this will avoid infinite loops for now.
+  self._unknownItem = null;
+
   // We inherit from the protolog class, since we are a catalog.
   BaseCatalog.call(self);
 };
@@ -312,23 +318,26 @@ _.extend(CompleteCatalog.prototype, {
   //   anyway. When we are using hot code push, we may be restarting the app
   //   because of a local package change that impacts that catalog. Don't wait
   //   on the official catalog to refresh data.json, in this case.
-  // - unknownItem: we actually meant to refresh the official catalog, so go do
-  //   that instead.
+  // - unknownItem: we are refreshing because we couldn't find an item, not just
+  //   because we are restarting or whatever. So, we probably actually meant to
+  //   refresh the official catalog, but, also, save the item that we couldn't
+  //   find. If we can't find it again after we refresh, then we should quit.
   refresh: function (options) {
     var self = this;
     options = options || {};
+
+    // We are a local catalog, but we meant to refresh the other one. Return,
+    // because it is going to make a call to refresh us when done.
+    if (options.unknownItem && self._unknownItem !== options.unknownItem) {
+      self._unknownItem = options.unknownItem;
+      catalog.official.refresh();
+    }
 
     // We need to limit the rate of refresh, or, at least, prevent any sort of
     // loops. ForceRefresh will override either one.
     if (!options.forceRefresh &&
         (catalog.official._refreshFutures || self.refreshing)) {
-      return;
-    }
 
-    // We are a local catalog, but we meant to refresh the other one. Return,
-    // because it is going to make a call to refresh us when done.
-    if (options.unknownItem) {
-      catalog.official.refresh();
       return;
     }
 

@@ -294,11 +294,11 @@ selftest.define("sync local catalog",  function () {
   var newPack = fullPackageName + "2";
   s.createPackage(newPack, "package-of-two-versions");
   s.cd(newPack, function() {
-/*    var packOpen = s.read("package.js");
+    var packOpen = s.read("package.js");
     packOpen = packOpen + "\nPackage.onUse(function(api) { \n" +
       "api.versionsFrom(\"" + releaseTrack + "@0.9\");\n" +
       "api.use(\"" + fullPackageName + "\"); });";
-    s.write("package.js", packOpen);*/
+    s.write("package.js", packOpen);
   });
 
   // Clear the local data cache by deleting the data.json file that we are

@@ -30,7 +30,6 @@ selftest.define("publish-and-search", ["slow"], function () {
       "api.versionsFrom(\"lowercases-are-totes-invalid@0.9\");\n" +
       " });";
     s.write("package.js", packOpen);
-    console.log(packOpen);
     run = s.run("publish", "--create");
     run.waitSecs(15);
     run.matchErr("Unknown release");
