@@ -286,6 +286,7 @@ Options:
 Run tests of the 'meteor' tool.
 Usage: meteor self-test [pattern] [--changed] [--slow]
                         [--force-online] [--history n]
+                        [--browserstack]
 
 Runs internal tests. Exits with status 0 on success.
 
@@ -406,6 +407,12 @@ Options:
 
 
 >>> publish-for-arch
+Publishes a bla bla bla.
+
+Usage: fry the eggs, then
+
+Publishes a
+
 XXX: WRITE
 
 

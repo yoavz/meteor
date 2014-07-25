@@ -1,15 +1,14 @@
 Package.describe({
-  name: "htmljs",
-  test: "htmljs-test",
   summary: "Small library for expressing HTML trees",
-  version: '1.0.0',
-  internal: true
+  version: '1.0.0'
 });
 
 Package.on_use(function (api) {
   api.export('HTML');
 
-  api.add_files(['utils.js', 'html.js', 'tohtml.js']);
+  api.add_files(['preamble.js',
+                 'visitors.js',
+                 'html.js']);
 });
 
 Package.on_test(function (api) {

@@ -1,9 +1,6 @@
 Package.describe({
-  name: "spacebars-tests",
-  test: "spacebars-tests-test",
   summary: "Additional tests for Spacebars",
-  version: '1.0.0',
-  internal: true
+  version: '1.0.0'
 });
 
 // These tests are in a separate package to avoid a circular dependency
@@ -15,11 +12,14 @@ Package.on_test(function (api) {
   api.use('jquery');
   api.use('test-helpers');
   api.use('showdown');
+  api.use('minimongo');
 
   api.use('templating', 'client');
   api.add_files([
     'template_tests.html',
-    'template_tests.js'
+    'template_tests.js',
+    'templating_tests.html',
+    'templating_tests.js'
   ], 'client');
 
   api.add_files('template_tests_server.js', 'server');

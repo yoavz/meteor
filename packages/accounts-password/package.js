@@ -1,6 +1,4 @@
 Package.describe({
-  name: "accounts-password",
-  test: "accounts-password-test",
   summary: "Password support for accounts",
   version: "1.0.0"
 });
@@ -15,7 +13,7 @@ Package.on_use(function(api) {
   api.use('sha', ['client', 'server']);
   api.use('email', ['server']);
   api.use('random', ['server']);
-  api.use('check', ['server']);
+  api.use('check');
   api.use('underscore');
   api.use('livedata', ['client', 'server']);
 

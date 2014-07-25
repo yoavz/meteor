@@ -1,25 +1,36 @@
 if (Meteor.isClient) {
-  var trim = function (string) {
-    return string.replace(/^\s*|\s*$/g, '');
+  var backgroundColor = function () {
+    return $(document.body).css('background-color');
   };
 
-  var allCss = function () {
-    return trim(_.map(document.styleSheets, function (stylesheet) {
-      return _.pluck(_.values(stylesheet.rules), 'cssText').join('\n');
-    }).join('\n'));
-  };
+  Meteor.startup(function () {
+    Meteor.call("clientLoad");
+    var numCssChanges = 0;
+    var oldBackgroundColor = backgroundColor();
+    Meteor.call("newStylesheet", numCssChanges, oldBackgroundColor);
+    var waitingForCssReloadToComplete = false;
+    Meteor.setInterval(function () {
+      if (waitingForCssReloadToComplete)
+        return;
 
-  Meteor.call("clientLoad");
-  var numCssChanges = 0;
-  var oldCss = allCss();
-  Meteor.call("newStylesheet", numCssChanges, oldCss);
-  setInterval(function () {
-    var newCss = allCss();
-    if (oldCss !== newCss) {
-      oldCss = newCss;
-      Meteor.call("newStylesheet", ++numCssChanges, newCss);
-    }
-  }, 500);
+      var newBackgroundColor = backgroundColor();
+      if (oldBackgroundColor !== newBackgroundColor) {
+        waitingForCssReloadToComplete = true;
+
+        // give the client some time to load the new css
+        var handle = Meteor.setInterval(function () {
+          var numberLinks = document.getElementsByTagName('link').length;
+          if (numberLinks === 1) {
+            // numberLinks will be 1 once the old css link is removed.
+            oldBackgroundColor = backgroundColor();
+            Meteor.call("newStylesheet", ++numCssChanges, oldBackgroundColor);
+            waitingForCssReloadToComplete = false;
+            Meteor.clearTimeout(handle);
+          }
+        }, 500);
+      }
+    }, 500);
+  });
 }
 
 if (Meteor.isServer) {
@@ -28,9 +39,9 @@ if (Meteor.isServer) {
       console.log("client connected");
     },
 
-    newStylesheet: function (numCssChanges, cssText) {
+    newStylesheet: function (numCssChanges, backgroundColor) {
       console.log("numCssChanges: " + numCssChanges);
-      console.log("new css: " + cssText);
+      console.log("background-color: " + backgroundColor);
     }
   });
 }

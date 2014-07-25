@@ -205,8 +205,8 @@ var PackageSource = function () {
   // it's still nice to get it right).
   self.serveRoot = null;
 
-  // Package metadata. Keys are 'summary' and 'internal' and
-  // 'git'. Currently all of these are optional.
+  // Package metadata. Keys are 'summary' and 'git'. Currently all of these are
+  // optional.
   self.metadata = {};
 
   // Package version as a semver string. Optional; not all packages
@@ -426,17 +426,15 @@ _.extend(PackageSource.prototype, {
     // == 'Package' object visible in package.js ==
     var Package = {
       // Set package metadata. Options:
-      // - summary: for 'meteor list'
-      // - internal: if true, hide in list
+      // - summary: for 'meteor list' & package server
       // - version: package version string (semver)
-      // - test: name of the test package (string)
       // - earliestCompatibleVersion: version string
       // There used to be a third option documented here,
       // 'environments', but it was never implemented and no package
       // ever used it.
       describe: function (options) {
         _.each(options, function (value, key) {
-          if (key === "summary" || key === "internal" ||
+          if (key === "summary" ||
               key === "git") {
             self.metadata[key] = value;
           } else if (key === "version") {
@@ -445,9 +443,6 @@ _.extend(PackageSource.prototype, {
             self.version = value;
           } else if (key === "earliestCompatibleVersion") {
             self.earliestCompatibleVersion = value;
-          } else if (key === "name") {
-          }
-          else if (key === "test") {
           }
           else {
             buildmessage.error("unknown attribute '" + key + "' " +
@@ -456,10 +451,10 @@ _.extend(PackageSource.prototype, {
         });
       },
 
-      on_use: function (f) {
+      onUse: function (f) {
         if (!self.isTest) {
           if (fileAndDepLoader) {
-            buildmessage.error("duplicate on_use handler; a package may have " +
+            buildmessage.error("duplicate onUse handler; a package may have " +
                                "only one", { useMyCaller: true });
             // Recover by ignoring the duplicate
             return;
@@ -468,7 +463,12 @@ _.extend(PackageSource.prototype, {
         }
       },
 
-      on_test: function (f) {
+      // Backwards compatibility for old interfaces.
+      on_use: function (f) {
+        this.onUse(f);
+      },
+
+      onTest: function (f) {
         // If we are not initializing the test package, then we are initializing
         // the normal package and have now noticed that it has tests. So, let's
         // register the test. This is a medium-length hack until we have new
@@ -481,13 +481,18 @@ _.extend(PackageSource.prototype, {
         // We are initializing the test, so proceed as normal.
         if (self.isTest) {
           if (fileAndDepLoader) {
-            buildmessage.error("duplicate on_test handler; a package may have " +
+            buildmessage.error("duplicate onTest handler; a package may have " +
                                "only one", { useMyCaller: true });
             // Recover by ignoring the duplicate
             return;
           }
           fileAndDepLoader = f;
         }
+      },
+
+      // Backwards compatibility for old interfaces.
+      on_test: function (f) {
+        this.onTest(f);
       },
 
       // Define a plugin. A plugin extends the build process for
@@ -817,19 +822,23 @@ _.extend(PackageSource.prototype, {
         // you don't fill in dependencies for some of your implies/uses, we will
         // look at the packages listed in the release to figure that out.
         versionsFrom: function (release) {
+          // If you don't specify a track, use our default.
+          if (release.indexOf('@') === -1) {
+            release = catalog.complete.DEFAULT_TRACK + "@" + release;
+          }
+
           var relInf = release.split('@');
           // XXX: Error handling
           if (relInf.length !== 2)
             throw new Error("Incorrect release spec");
-          var catalog = require('./catalog.js').complete;
           // XXX: We pass in true to override the fact that we know that teh
           // catalog may not be initialized, but we are pretty sure that the
           // releases are there anyway. This is not the right way to do this
           // long term.
-          releaseRecord = catalog.getReleaseVersion(
+          releaseRecord = catalog.official.getReleaseVersion(
             relInf[0], relInf[1], true);
           if (!releaseRecord) {
-            throw new Error("Unknown release", release);
+            throw new Error("Unknown release "+ release);
            }
         },
 

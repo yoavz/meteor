@@ -191,7 +191,7 @@ main.registerCommand({
       var releasePackages = release.current.getPackages();
       // HACK: relies on fact that the function below doesn't actually
       //       have any relation to the project directory
-      project._ensurePackagesExistOnDisk(releasePackages);
+      project._ensurePackagesExistOnDisk(releasePackages, { verbose: true });
       loadPackages(
         _.keys(releasePackages),
         new packageLoader.PackageLoader({versions: releasePackages}));
@@ -228,6 +228,16 @@ main.registerCommand({
     once: { type: Boolean }
   }
 }, function (options) {
+
+  // Calculate project versions. (XXX: Theoretically, we should not be doing it
+  // here. We should do it lazily, if the command calls for it. However, we do
+  // end up recalculating them for stats, for example, and, more importantly, we
+  // have noticed some issues if we just leave this in the air. We think that
+  // those issues are concurrency-related, or possibly some weird
+  // order-of-execution of interaction that we are failing to understand. This
+  // seems to fix it in a clear and understandable fashion.)
+  project.getVersions();
+
   // XXX factor this out into a {type: host/port}?
   var portMatch = options.port.match(/^(?:(.+):)?([0-9]+)$/);
   if (!portMatch) {
@@ -306,26 +316,52 @@ main.registerCommand({
   if (options.package) {
     var packageName = options.args[0];
 
-    // Cannot create a package from example yet!
-    if (options.example) {
-      process.stderr.write("Cannot create a package from example. \n\n");
-      throw new main.ShowUsage;
-    }
     // No package examples exist yet.
-    if (options.list) {
-      process.stderr.write("No package examples exist at this time. \n\n");
+    if (options.list && options.example) {
+      process.stderr.write("No package examples exist at this time.\n\n");
       throw new main.ShowUsage;
     }
 
     if (fs.existsSync(packageName)) {
-      process.stderr.write(appPath + ": Already exists\n");
+      process.stderr.write(packageName + ": Already exists\n");
       return 1;
     }
 
-    // XXX: Make this cooler.
-    files.cp_r(path.join(__dirname, 'skel-pack'), packageName);
+    var transform = function (x) {
+      var xn = x.replace(/~name~/g, packageName);
 
-    process.stderr.write(packageName + ": created \n");
+      // If we are running from checkout, comment out the line sourcing packages
+      // from a release, with the latest release filled in (in case they do want
+      // to publish later). If we are NOT running from checkout, fill it out
+      // with the current release.
+      var relString;
+      if (release.current.isCheckout()) {
+        xn = xn.replace(/~cc~/g, "//");
+        var rel = catalog.complete.getDefaultReleaseVersion();
+        var relString = rel.track + "@" + rel.version;
+      } else {
+        xn = xn.replace(/~cc~/g, "");
+        relString = release.current.name;
+      }
+
+      // If we are not in checkout, write the current release here.
+      return xn.replace(/~release~/g, relString);
+    };
+
+    files.cp_r(path.join(__dirname, 'skel-pack'), packageName, {
+      transformFilename: function (f) {
+        return transform(f);
+      },
+      transformContents: function (contents, f) {
+        if ((/(\.html|\.js|\.css)/).test(f))
+          return new Buffer(transform(contents.toString()));
+        else
+          return contents;
+      },
+      ignore: [/^local$/]
+    });
+
+    process.stdout.write(packageName + ": created\n");
     return 0;
   }
 
@@ -409,17 +445,20 @@ main.registerCommand({
   }
 
   // We are actually working with a new meteor project at this point, so
-  // reorient its path.
+  // reorient its path. We might do some things to it, but they should be
+  // invisible to the user, so mute non-error output.
   project.setRootDir(appPath);
+  project.setMuted(true);
   project.writeMeteorReleaseVersion(
     release.current.isCheckout() ? "none" : release.current.name);
+  project._ensureDepsUpToDate();
 
-  process.stderr.write(appPath + ": created");
+  process.stdout.write(appPath + ": created");
   if (options.example && options.example !== appPath)
     process.stderr.write(" (from '" + options.example + "' template)");
-  process.stderr.write(".\n\n");
+  process.stdout.write(".\n\n");
 
-  process.stderr.write(
+  process.stdout.write(
     "To run your new app:\n" +
       "   cd " + appPath + "\n" +
       "   meteor\n");
@@ -492,7 +531,6 @@ main.registerCommand({
 
   var bundler = require(path.join(__dirname, 'bundler.js'));
   var loader = project.getPackageLoader();
-  stats.recordPackages(options.appDir);
 
   var bundleResult = bundler.bundle({
     outputPath: bundlePath,
@@ -681,6 +719,16 @@ main.registerCommand({
     }
   }
 
+  // We are actually going to end up compiling an app at this point, so figure
+  // out its versions. . (XXX: Theoretically, we should not be doing it here. We
+  // should do it lazily, if the command calls for it. However, we do end up
+  // recalculating them for stats, for example, and, more importantly, we have
+  // noticed some issues if we just leave this in the air. We think that those
+  // issues are concurrency-related, or possibly some weird order-of-execution
+  // of interaction that we are failing to understand. This seems to fix it in a
+  // clear and understandable fashion.)
+  project.getVersions();
+
   if (options.password) {
     if (useGalaxy) {
       process.stderr.write("Galaxy does not support --password.\n");
@@ -717,9 +765,9 @@ main.registerCommand({
   var buildArch = DEPLOY_ARCH;
   if (options['override-architecture-with-local']) {
     process.stdout.write(
-      "\n => WARNING: OVERRIDING DEPLOY ARCHITECTURE WITH LOCAL ARCHITECTURE \n");
+      "\n => WARNING: OVERRIDING DEPLOY ARCHITECTURE WITH LOCAL ARCHITECTURE\n");
     process.stdout.write(
-      " => If your app contains binary code, it may break terribly and you will be sad. \n\n");
+      " => If your app contains binary code, it may break terribly and you will be sad.\n\n");
     buildArch = archinfo.host();
   }
 
@@ -986,6 +1034,7 @@ main.registerCommand({
   // We are going to operate in the special test project, so let's remap our
   // main project to the test directory.
   project.setRootDir(testRunnerAppDir);
+  project.setMuted(true); // Mute output where applicable
   project.writeMeteorReleaseVersion(release.current.name || 'none');
   project.forceEditPackages(
     [options['driver-package'] || 'test-in-browser'],
@@ -1360,7 +1409,7 @@ main.registerCommand({
     browserstack: options.browserstack
   };
 
-  return selftest.runTests({
+ return selftest.runTests({
     onlyChanged: options.changed,
     offline: offline,
     includeSlowTests: options.slow,
@@ -1368,6 +1417,7 @@ main.registerCommand({
     clients: clients,
     testRegexp: testRegexp
   });
+
 });
 
 ///////////////////////////////////////////////////////////////////////////////

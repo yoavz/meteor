@@ -1,6 +1,6 @@
 <html {{htmlAttributes}}>
 <head>
-{{#each css}}  <link rel="stylesheet" href="{{../bundledJsCssPrefix}}{{url}}">{{/each}}
+{{#each css}}  <link rel="stylesheet" type="text/css" class="__meteor-css__" href="{{../bundledJsCssPrefix}}{{url}}">{{/each}}
 
 {{#if inlineScriptsAllowed}}
 <script type='text/javascript'>__meteor_runtime_config__ = {{meteorRuntimeConfig}};</script>
@@ -9,11 +9,17 @@
 {{/if}}
 {{#each js}}  <script type="text/javascript" src="{{../bundledJsCssPrefix}}{{url}}"></script>
 {{/each}}
-{{#if inlineScriptsAllowed}}
-<script type='text/javascript'>{{{reloadSafetyBelt}}}</script>
-{{else}}
-<script type='text/javascript' src='{{rootUrlPathPrefix}}/meteor_reload_safetybelt.js'></script>
-{{/if}}
+{{#each additionalStaticJs}}
+  {{#if ../inlineScriptsAllowed}}
+    <script type='text/javascript'>
+      {{contents}}
+    </script>
+  {{else}}
+    <script type='text/javascript'
+            src='{{rootUrlPathPrefix}}{{pathname}}'></script>
+  {{/if}}
+{{/each}}
+
 {{{head}}}
 </head>
 <body>

@@ -83,9 +83,23 @@ var Project = function () {
   // fields. Rather than recomputing immediately, let's wait until we are done
   // and then recompute when needed.
   self._depsUpToDate = false;
+
+  // In verbose mode (default) we print stuff out. When the project is something
+  // automatic, like test-packages or get-ready, we should mute the (expected)
+  // output. For example, we don't need to tell the user that we are adding
+  // packages to an app during test-packages.
+  self.muted = false;
 };
 
 _.extend(Project.prototype, {
+
+  // Sets the mute flag on the project. Muted projects don't print out non-error
+  // output.
+  setMuted : function (muted) {
+    var self = this;
+    self.muted = muted;
+  },
+
   // Set a given root directory as the project's root directory. Figure out all
   // relevant file paths and read in data that is independent of the constraint
   // solver.
@@ -180,7 +194,7 @@ _.extend(Project.prototype, {
       var oldVersions = self.dependencies;
       var setV = self.setVersions(newVersions);
       self.showPackageChanges(oldVersions, newVersions, {
-        ondiskPackages: setV.downloaded
+        onDiskPackages: setV.downloaded
       });
 
       if (!setV.success) {
@@ -272,8 +286,8 @@ _.extend(Project.prototype, {
   //
   // return 0 if everything went well, or 1 if we failed in some way.
   showPackageChanges : function (versions, newVersions, options) {
-    // options.skipPackages
-    // options.ondiskPackages
+    var self = this;
+    // options.onDiskPackages
 
     // Don't tell the user what all the operations were until we finish -- we
     // don't want to give a false sense of completeness until everything is
@@ -284,7 +298,7 @@ _.extend(Project.prototype, {
     // Remove the versions that don't exist
     var removed = _.difference(_.keys(versions), _.keys(newVersions));
     _.each(removed, function(packageName) {
-      messageLog.push("removed dependency on " + packageName);
+      messageLog.push("  removed " + packageName + " from project");
     });
 
     _.each(newVersions, function(version, packageName) {
@@ -309,12 +323,6 @@ _.extend(Project.prototype, {
         return;
       }
 
-      // Add a message to the update logs to show the user what we have done.
-      if ( _.contains(options.skipPackages, packageName)) {
-        // If we asked for this, we will log it later in more detail.
-        return;
-      }
-
       // If the previous versions file had this, then we are upgrading, if it did
       // not, then we must be adding this package anew.
       if (_.has(versions, packageName)) {
@@ -331,9 +339,11 @@ _.extend(Project.prototype, {
       return 1;
 
     // Show the user the messageLog of packages we added.
-    _.each(messageLog, function (msg) {
-      process.stdout.write(msg + "\n");
-    });
+    if (!self.muted) {
+      _.each(messageLog, function (msg) {
+        process.stdout.write(msg + "\n");
+      });
+    }
     return 0;
   },
 
@@ -565,6 +575,8 @@ _.extend(Project.prototype, {
   //   downloaded: package:version of packages that we have downloaded
   setVersions: function (newVersions, options) {
     var self = this;
+    options = options || {};
+
     var downloaded = self._ensurePackagesExistOnDisk(newVersions);
     var ret = {
       success: true,
@@ -577,8 +589,9 @@ _.extend(Project.prototype, {
       return ret;
     }
 
-    // Skip the disk IO if the versions haven't changed.
-    if (!_.isEqual(newVersions, self.dependencies)) {
+    // Skip the disk IO if the versions haven't changed, unless we have asked to
+    // always record. (For example, update will always record versions)
+    if (options.alwaysRecord || !_.isEqual(newVersions, self.dependencies)) {
       self.dependencies = newVersions;
       self._recordVersions(options);
     }
@@ -617,8 +630,11 @@ _.extend(Project.prototype, {
   //
   // This primarily exists as a safety check to be used when doing operations
   // that could lead to changes in the versions file.
-  _ensurePackagesExistOnDisk : function (versions, arch) {
-    arch = arch || archinfo.host();
+  _ensurePackagesExistOnDisk : function (versions, options) {
+    var self = this;
+    options = options || {};
+    var arch = options.arch || archinfo.host();
+    var verbose = options.verbose || !self.muted;
     var downloadedPackages = {};
     _.each(versions, function (version, name) {
       var packageVersionInfo = { packageName: name, version: version };
@@ -626,7 +642,7 @@ _.extend(Project.prototype, {
         var available = tropohouse.default.maybeDownloadPackageForArchitectures(
           packageVersionInfo,
           ['browser', arch],
-          true /* print downloading message */
+          verbose /* print downloading message */
         );
         downloadedPackages[name] = version;
       } catch (err) {
@@ -660,7 +676,8 @@ _.extend(Project.prototype, {
     // First, we need to make sure that we have downloaded all the packages that
     // we are going to use. So, go through the versions and call tropohouse to
     // make sure that we have them.
-    var downloadedPackages = self._ensurePackagesExistOnDisk(newVersions);
+    var downloadedPackages = self._ensurePackagesExistOnDisk(newVersions,
+                                                             { verbose: true });
 
     // Return the packages that we have downloaded successfully and let the
     // client deal with reporting the error to the user.
@@ -669,12 +686,14 @@ _.extend(Project.prototype, {
     }
 
     // We can continue normally, so set our own internal variables.
-    self.constraints = _.extend(self.constraints, moreDeps);
+    _.each(moreDeps, function (constraint) {
+      self.constraints[constraint.name] = constraint.constraintString;
+    });
     self.dependencies = newVersions;
 
     // Remove the old constraints on the same constraints, since we are going to
     // overwrite them.
-    self._removePackageRecords(_.pluck(moreDeps, 'package'));
+    self._removePackageRecords(_.pluck(moreDeps, 'name'));
 
     // Add to the packages file. Do this first, since the versions file is
     // derived from this one and can always be reconstructed later. We read the
@@ -682,10 +701,10 @@ _.extend(Project.prototype, {
     var packages = self._getConstraintFile();
     var lines = files.getLinesOrEmpty(packages);
     _.each(moreDeps, function (constraint) {
-      if (constraint.constraint) {
-        lines.push(constraint.package + '@' + constraint.constraint);
+      if (constraint.constraintString) {
+        lines.push(constraint.name + '@' + constraint.constraintString);
       } else {
-        lines.push(constraint.package);
+        lines.push(constraint.name);
       }
     });
     lines.push('\n');

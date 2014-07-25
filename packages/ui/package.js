@@ -1,9 +1,6 @@
 Package.describe({
-  name: "ui",
-  test: "ui-test",
   summary: "Meteor UI Components framework",
-  version: '1.0.0',
-  internal: true
+  version: '1.0.0'
 });
 
 Package.on_use(function (api) {
@@ -23,18 +20,10 @@ Package.on_use(function (api) {
   api.use('htmljs');
   api.imply('htmljs');
 
-  api.add_files(['exceptions.js', 'base.js']);
+  api.use('blaze');
+  api.imply('blaze');
 
-  api.add_files(['dombackend.js',
-                 'domrange.js'], 'client');
-
-  api.add_files(['attrs.js',
-                 'render.js',
-                 'builtins.js',
-                 'each.js',
-                 'fields.js'
-                ]);
-
+  api.add_files(['ui.js']);
   api.add_files(['handlebars_backcompat.js']);
 });
 
@@ -43,14 +32,11 @@ Package.on_test(function (api) {
   api.use('jquery'); // strong dependency, for testing jQuery backend
   api.use('ui');
   api.use(['test-helpers', 'underscore'], 'client');
-  api.use('spacebars-compiler'); // for `HTML.toJS`
+  api.use('blaze-tools'); // for `HTML.toJS`
 
   api.use('html-tools');
 
   api.add_files([
-    'base_tests.js',
-    'domrange_tests.js',
-    'render_tests.js',
-    'dombackend_tests.js'
+    'render_tests.js'
   ], 'client');
 });

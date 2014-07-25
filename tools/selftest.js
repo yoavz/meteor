@@ -408,6 +408,7 @@ _.extend(Sandbox.prototype, {
                   " to run against clients." );
     }
     _.each(self.clients, function (client) {
+      console.log("testing with " + client.name + "...");
       f(new Run(self.execPath, {
         sandbox: self,
         args: [],
@@ -439,6 +440,17 @@ _.extend(Sandbox.prototype, {
     if (!self.warehouse && release.current.isProperRelease()) {
       self.write(path.join(to, '.meteor/release'), release.current.name);
     }
+  },
+
+  // Same as createApp, but with a package.
+  //
+  // For example:
+  //   s.createPackage('mypack', 'empty');
+  //   s.cd('mypack');
+  createPackage: function (to, template) {
+    var self = this;
+    files.cp_r(path.join(__dirname, 'tests', 'packages', template),
+               path.join(self.cwd, to));
   },
 
   // Change the cwd to be used for subsequent runs. For example:
@@ -495,10 +507,35 @@ _.extend(Sandbox.prototype, {
       return fs.readFileSync(path.join(self.cwd, filename), 'utf8');
   },
 
+  // Copy the contents of one file to another.  In these series of tests, we often
+  // want to switch contents of package.js files. It is more legible to copy in
+  // the backup file rather than trying to write into it manually.
+  cp: function(from, to) {
+    var self = this;
+    var contents = self.read(from);
+    if (!contents) {
+      throw new Error("File " + from + " does not exist.");
+    };
+    self.write(to, contents);
+  },
+
   // Delete a file in the sandbox. 'filename' is as in write().
   unlink: function (filename) {
     var self = this;
     fs.unlinkSync(path.join(self.cwd, filename));
+  },
+
+  // Make a directory in the sandbox. 'filename' is as in write().
+  mkdir: function (dirname) {
+    var self = this;
+    fs.mkdirSync(path.join(self.cwd, dirname));
+  },
+
+  // Rename something in the sandbox. 'oldName' and 'newName' are as in write().
+  rename: function (oldName, newName) {
+    var self = this;
+    fs.renameSync(path.join(self.cwd, oldName),
+                  path.join(self.cwd, newName));
   },
 
   // Return the current contents of .meteorsession in the sandbox.
@@ -539,13 +576,18 @@ _.extend(Sandbox.prototype, {
   // Writes a stub warehouse (really a tropohouse) to the directory
   // self.warehouse. This warehouse only contains a meteor-tool package and some
   // releases containing that tool only (and no packages).
-  _makeWarehouse: function (releases) {
+  //
+  // packageServerUrl indicates which package server we think we are using. Use
+  // the default, if we do not pass this in -- which means that if you
+  // initialize a warehouse w/o specifying the packageServerUrl and *then* set a
+  // new PACKAGE_SERVER_URL environment variable, you will be sad.
+  _makeWarehouse: function (releases, packageServerUrl) {
     var self = this;
     files.mkdir_p(path.join(self.warehouse, 'packages'), 0755);
     files.mkdir_p(path.join(self.warehouse, 'package-metadata', 'v1'), 0755);
 
     var stubCatalog = {
-      syncToken: "NOPE",
+      syncToken: {},
       formatVersion: "1.0",
       collections: {
         packages: [],
@@ -614,8 +656,69 @@ _.extend(Sandbox.prototype, {
       });
     });
 
+    // XXX: This is an incremental hack to be able to create apps from the
+    // warehouse. We need the constraint solver that runs are create-time to be
+    // able to solve for the starting app packages (standrd-app-packages,
+    // insecure & autopublish). But the solution doesn't have to be
+    // accurate. Later, when we care about the solution making sense, we should
+    // consider actually importing real data.
+
+    // XXXX: HACK.  We are going to cheat and assume that these are already
+    // in the official catalog. Since we don't care about the contents, we
+    // should be OK.
+    var oldOffline = catalog.official.offline;
+    catalog.official.offline = true;
+    catalog.official.refresh();
+    _.each(
+      ['autopublish', 'standard-app-packages', 'insecure'],
+      function (name) {
+        var versionRec = catalog.official.getLatestVersion(name);
+        if (!versionRec) {
+          catalog.official.offline = false;
+          catalog.official.refresh();
+          catalog.official.offline = true;
+          versionRec = catalog.official.getLatestVersion(name);
+          if (!versionRec) {
+            throw new Error(" hack fails for " + name);
+          }
+        }
+        var buildRec = catalog.official.getAllBuilds(
+          name, versionRec.version)[0];
+
+        // Insert into packages.
+        stubCatalog.collections.packages.push({
+          name: name,
+          _id: utils.randomToken()
+        });
+
+        // Insert into versions. We are making up a lot of this data.
+        var versionId = utils.randomToken();
+        stubCatalog.collections.versions.push({
+          packageName: name,
+          version: versionRec.version,
+          earliestCompatibleVersion: versionRec.earliestCompatibleVersion,
+          containsPlugins: false,
+          description: "warehouse test",
+          dependencies: {},
+          compilerVersion: require('./compiler.js').BUILT_BY,
+          _id: versionRec._id
+        });
+
+        // Insert into builds. Assume the package is available for all
+        // architectures.
+        stubCatalog.collections.builds.push({
+          buildArchitectures: "browser+os",
+          versionId: versionRec._id,
+          build: buildRec.build,
+          _id: utils.randomToken()
+        });
+    });
+    catalog.official.offline = oldOffline;
+
+    var config = require("./config.js");
+    var dataFile = config. getLocalPackageCacheFilename(packageServerUrl);
     fs.writeFileSync(
-      path.join(self.warehouse, 'package-metadata', 'v1', 'data.json'),
+      path.join(self.warehouse, 'package-metadata', 'v1', dataFile),
       JSON.stringify(stubCatalog, null, 2));
 
     // And a cherry on top
@@ -646,6 +749,7 @@ var PhantomClient = function (options) {
   var self = this;
   Client.apply(this, arguments);
 
+  self.name = "phantomjs";
   self.process = null;
 };
 
@@ -661,11 +765,7 @@ _.extend(PhantomClient.prototype, {
       '/bin/bash',
       ['-c',
        ("exec " + phantomPath + " --load-images=no /dev/stdin <<'END'\n" +
-        phantomScript + "END\n")], function (err, stdout, stderr) {
-          if (stderr.match(/not found/)) {
-            console.log("ERROR: phantomjs not installed properly.");
-          }
-    });
+        phantomScript + "END\n")]);
   },
   stop: function() {
     var self = this;
@@ -681,6 +781,7 @@ var BrowserStackClient = function (options) {
   var self = this;
   Client.apply(this, arguments);
 
+  self.name = "BrowserStack";
   self.tunnelProcess = null;
   self.driver = null;
 };
@@ -699,7 +800,7 @@ _.extend(BrowserStackClient.prototype, {
         "have installed your S3 credentials.");
 
     var capabilities = {
-      'browserName' : 'chrome',
+      'browserName' : 'firefox',
       'browserstack.user' : 'meteor',
       'browserstack.local' : 'true',
       'browserstack.key' : browserStackKey
@@ -743,8 +844,12 @@ _.extend(BrowserStackClient.prototype, {
 
   _launchBrowserStackTunnel: function (callback) {
     var self = this;
+    var browserStackPath =
+      path.join(files.getDevBundle(), 'bin', 'BrowserStackLocal');
+    fs.chmodSync(browserStackPath, 0755);
+
     var args = [
-      'BrowserStackLocal',
+      browserStackPath,
       browserStackKey,
       [self.host, self.port, 0].join(','),
       // Disable Live Testing and Screenshots, just test with Automate.
@@ -754,15 +859,8 @@ _.extend(BrowserStackClient.prototype, {
     ];
     self.tunnelProcess = child_process.execFile(
       '/bin/bash',
-      ['-c', args.join(' ')],
-      function (err, stdout, stderr) {
-        if (stderr.match(/not found/)) {
-          console.log("ERROR: BrowserStackLocal binary not installed. " +
-                      "Instructions for installing the binary can be found " +
-                      "at http://www.browserstack.com/local-testing " +
-                      "XXX add to dev_bundle.");
-        }
-    });
+      ['-c', args.join(' ')]
+    );
 
     // Called when the SSH tunnel is established.
     self.tunnelProcess.stdout.on('data', function(data) {
@@ -790,7 +888,7 @@ var Run = function (execPath, options) {
   self.env = options.env || {};
   self._args = [];
   self.proc = null;
-  self.baseTimeout = 2;
+  self.baseTimeout = 20;
   self.extraTime = 0;
   self.client = options.client;
 

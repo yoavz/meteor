@@ -1,10 +1,6 @@
-
 Package.describe({
-  name: "html-tools",
-  test: "html-tools-test",
   summary: "Standards-compliant HTML tools",
-  version: '1.0.0',
-  internal: true
+  version: '1.0.0'
 });
 
 Package.on_use(function (api) {
@@ -17,6 +13,7 @@ Package.on_use(function (api) {
                  'scanner.js',
                  'charref.js',
                  'tokenize.js',
+                 'templatetag.js',
                  'parse.js']);
 });
 
@@ -25,7 +22,7 @@ Package.on_test(function (api) {
   api.use('html-tools');
   api.use('underscore');
   api.use('htmljs');
-  api.use('spacebars-compiler'); // for `HTML.toJS`
+  api.use('blaze-tools'); // for `toJS`
   api.add_files(['charref_tests.js',
                  'tokenize_tests.js',
                  'parse_tests.js']);

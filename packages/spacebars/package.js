@@ -1,9 +1,6 @@
 Package.describe({
-  name: "spacebars",
-  test: "spacebars-test",
   summary: "Handlebars-like template language for Meteor",
-  version: '1.0.0',
-  internal: true
+  version: '1.0.0'
 });
 
 // For more, see package `spacebars-compiler`, which is used by
@@ -15,11 +12,11 @@ Package.describe({
 // Additional tests are in `spacebars-tests`.
 
 Package.on_use(function (api) {
-  api.use('spacebars-common');
-  api.imply('spacebars-common');
+  api.export('Spacebars');
 
   api.use('htmljs');
   api.use('ui');
+  api.use('observe-sequence');
   api.use('templating');
   api.add_files(['spacebars-runtime.js']);
   api.add_files(['dynamic.html', 'dynamic.js'], 'client');

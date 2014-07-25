@@ -44,6 +44,7 @@ compiler.BUILT_BY = 'meteor/11';
 //  - acceptableWeakPackages: if set, include direct weak dependencies
 //    that are on one of these packages (it's an object mapping
 //    package name -> true). Otherwise skip all weak dependencies.
+//  - constraintSolverOpts
 //
 // (Why does we need to list acceptable weak packages here rather than just
 // implement a skipWeak flag and allow the caller to filter the ones they care
@@ -132,8 +133,10 @@ compiler.eachUsedUnibuild = function (
 // PackgeSource), or we could have some kind of cache (the ideal place
 // for such a cache might be inside the constraint solver, since it
 // will know how/when to invalidate it).
-var determineBuildTimeDependencies = function (packageSource) {
+var determineBuildTimeDependencies = function
+    (packageSource,  constraintSolverOpts) {
   var ret = {};
+  constraintSolverOpts =  constraintSolverOpts || {};
 
   // There are some special cases where we know that the package has no source
   // files, which means it can't have any interesting build-time
@@ -183,8 +186,11 @@ var determineBuildTimeDependencies = function (packageSource) {
   });
 
   var versions = packageSource.dependencyVersions.dependencies || {};
-  ret.packageDependencies = catalog.complete.resolveConstraints(constraints_array,
-                                              { previousSolution: versions });
+  ret.packageDependencies =
+        catalog.complete.resolveConstraints(
+             constraints_array,
+             { previousSolution: versions },
+             constraintSolverOpts);
 
   // We care about differentiating between all dependencies (which we save in
   // the version lock file) and the direct dependencies (which are packages that
@@ -221,7 +227,9 @@ var determineBuildTimeDependencies = function (packageSource) {
     var pluginVersion = pluginVersions[info.name] || {};
     ret.pluginDependencies[info.name] =
       catalog.complete.resolveConstraints(
-         constraints_array, { previousSolution: pluginVersion  });
+         constraints_array,
+         { previousSolution: pluginVersion },
+         constraintSolverOpts );
   });
 
   // Every time we run the constraint solver, we record the results. This has
@@ -390,8 +398,15 @@ var compileUnibuild = function (unipackage, inputSourceArch, packageLoader,
     var fileOptions = _.clone(source.fileOptions) || {};
     var absPath = path.resolve(inputSourceArch.pkg.sourceRoot, relPath);
     var filename = path.basename(relPath);
-    var file = watch.readAndWatchFileWithHash(watchSet, absPath);
+    var sourceWatchSet = new watch.WatchSet();
+    var file = watch.readAndWatchFileWithHash(sourceWatchSet, absPath);
     var contents = file.contents;
+
+    // Only add the source file to the WatchSet if it's actually added to
+    // the build. This is a hacky workaround because plugins do not register
+    // themselves as "client" or "server", so we need to detect whether a file
+    // is actually added to the client/server program.
+    var sourceIsWatched = false;
 
     sources.push(relPath);
 
@@ -563,6 +578,7 @@ var compileUnibuild = function (unipackage, inputSourceArch, packageLoader,
           throw new Error("'section' must be 'head' or 'body'");
         if (typeof options.data !== "string")
           throw new Error("'data' option to appendDocument must be a string");
+        sourceIsWatched = true;
         resources.push({
           type: options.section,
           data: new Buffer(options.data, 'utf8')
@@ -574,8 +590,10 @@ var compileUnibuild = function (unipackage, inputSourceArch, packageLoader,
                           "browser targets");
         if (typeof options.data !== "string")
           throw new Error("'data' option to addStylesheet must be a string");
+        sourceIsWatched = true;
         resources.push({
           type: "css",
+          refreshable: true,
           data: new Buffer(options.data, 'utf8'),
           servePath: path.join(inputSourceArch.pkg.serveRoot, options.path),
           sourceMap: options.sourceMap
@@ -588,6 +606,7 @@ var compileUnibuild = function (unipackage, inputSourceArch, packageLoader,
           throw new Error("'sourcePath' option must be supplied to addJavaScript. Consider passing inputPath.");
         if (options.bare && ! archinfo.matches(inputSourceArch.arch, "browser"))
           throw new Error("'bare' option may only be used for browser targets");
+        sourceIsWatched = true;
         js.push({
           source: options.data,
           sourcePath: options.sourcePath,
@@ -599,6 +618,7 @@ var compileUnibuild = function (unipackage, inputSourceArch, packageLoader,
       addAsset: function (options) {
         if (! (options.data instanceof Buffer))
           throw new Error("'data' option to addAsset must be a Buffer");
+        sourceIsWatched = true;
         addAsset(options.data, options.path);
       },
       error: function (options) {
@@ -619,6 +639,10 @@ var compileUnibuild = function (unipackage, inputSourceArch, packageLoader,
 
       // Recover by ignoring this source file (as best we can -- the
       // handler might already have emitted resources)
+    }
+
+    if (sourceIsWatched) {
+      watchSet.merge(sourceWatchSet);
     }
   });
 
@@ -885,7 +909,8 @@ var getPluginProviders = function (versions) {
 // objects with keys 'name', 'version' (the latter a version
 // string). Yes, it is possible that multiple versions of some other
 // package might be build-time dependencies (because of plugins).
-compiler.getBuildOrderConstraints = function (packageSource) {
+compiler.getBuildOrderConstraints = function (
+    packageSource,  constraintSolverOpts) {
   var versions = {}; // map from package name to version to true
   var addVersion = function (version, name) {
     if (name !== packageSource.name) {
@@ -895,7 +920,8 @@ compiler.getBuildOrderConstraints = function (packageSource) {
     }
   };
 
-  var buildTimeDeps = determineBuildTimeDependencies(packageSource);
+  var buildTimeDeps = determineBuildTimeDependencies(
+      packageSource, constraintSolverOpts);
 
   // Direct dependencies only impose a build-order constraint if they
   // contain plugins.
@@ -921,7 +947,9 @@ compiler.getBuildOrderConstraints = function (packageSource) {
 // identical code). True if we have dependency info and it
 // says that the package is up-to-date. False if a source file or
 // build-time dependency has changed.
-compiler.checkUpToDate = function (packageSource, unipackage) {
+compiler.checkUpToDate = function (
+    packageSource, unipackage, constraintSolverOpts) {
+
   if (unipackage.forceNotUpToDate) {
     return false;
   }
@@ -936,7 +964,9 @@ compiler.checkUpToDate = function (packageSource, unipackage) {
   // `buildTimeDeps`, by comparing versions (including build
   // identifiers). For direct dependencies, we only care if the set of
   // direct dependencies that provide plugins has changed.
-  var buildTimeDeps = determineBuildTimeDependencies(packageSource);
+  var buildTimeDeps = determineBuildTimeDependencies(
+      packageSource, constraintSolverOpts);
+
   var sourcePluginProviders = getPluginProviders(
     buildTimeDeps.directDependencies
   );

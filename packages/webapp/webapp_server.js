@@ -11,6 +11,8 @@ var connect = Npm.require('connect');
 var useragent = Npm.require('useragent');
 var send = Npm.require('send');
 
+var Future = Npm.require('fibers/future');
+
 var SHORT_SOCKET_TIMEOUT = 5*1000;
 var LONG_SOCKET_TIMEOUT = 120*1000;
 
@@ -18,18 +20,6 @@ WebApp = {};
 WebAppInternals = {};
 
 var bundledJsCssPrefix;
-
-// The reload safetybelt is some js that will be loaded after everything else in
-// the HTML.  In some multi-server deployments, when you update, you have a
-// chance of hitting an old server for the HTML and the new server for the JS or
-// CSS.  This prevents you from displaying the page in that case, and instead
-// reloads it, presumably all on the new version now.
-var RELOAD_SAFETYBELT = "\n" +
-      "if (typeof Package === 'undefined' ||\n" +
-      "    ! Package.webapp ||\n" +
-      "    ! Package.webapp.WebApp ||\n" +
-      "    ! Package.webapp.WebApp._isCssLoaded())\n" +
-      "  document.location.reload(); \n";
 
 // Keepalives so that when the outer server dies unceremoniously and
 // doesn't kill us, we quit ourselves. A little gross, but better than
@@ -60,6 +50,10 @@ var sha1 = function (contents) {
   var hash = crypto.createHash('sha1');
   hash.update(contents);
   return hash.digest('hex');
+};
+
+var readUtf8FileSync = function (filename) {
+  return Future.wrap(fs.readFile)(filename, 'utf8').wait();
 };
 
 // #BrowserIdentification
@@ -179,11 +173,15 @@ var appUrl = function (url) {
 // (but the second is a performance enhancement, not a hard
 // requirement).
 
-var calculateClientHash = function () {
+var calculateClientHash = function (includeFilter) {
   var hash = crypto.createHash('sha1');
-  hash.update(JSON.stringify(__meteor_runtime_config__), 'utf8');
+  // Omit the old hashed client values in the new hash. These may be
+  // modified in the new boilerplate.
+  hash.update(JSON.stringify(_.omit(__meteor_runtime_config__,
+               ['autoupdateVersion', 'autoupdateVersionRefreshable']), 'utf8'));
   _.each(WebApp.clientProgram.manifest, function (resource) {
-    if (resource.where === 'client' || resource.where === 'internal') {
+      if ((! includeFilter || includeFilter(resource.type)) &&
+          (resource.where === 'client' || resource.where === 'internal')) {
       hash.update(resource.path);
       hash.update(resource.hash);
     }
@@ -211,6 +209,16 @@ var calculateClientHash = function () {
 
 Meteor.startup(function () {
   WebApp.clientHash = calculateClientHash();
+  WebApp.calculateClientHashRefreshable = function () {
+    return calculateClientHash(function (name) {
+      return name === "css";
+    });
+  };
+  WebApp.calculateClientHashNonRefreshable = function () {
+    return calculateClientHash(function (name) {
+      return name !== "css";
+    });
+  };
 });
 
 
@@ -235,17 +243,223 @@ WebApp._timeoutAdjustmentRequestCallback = function (req, res) {
   _.each(finishListeners, function (l) { res.on('finish', l); });
 };
 
+// Will be updated by main before we listen.
+var boilerplateFunc = null;
+var boilerplateBaseData = null;
+var memoizedBoilerplate = {};
+
+// Given a request (as returned from `categorizeRequest`), return the
+// boilerplate HTML to serve for that request. Memoizes on HTML
+// attributes (used by, eg, appcache) and whether inline scripts are
+// currently allowed.
+var getBoilerplate = function (request) {
+  var htmlAttributes = getHtmlAttributes(request);
+
+  // The only thing that changes from request to request (for now) are
+  // the HTML attributes (used by, eg, appcache) and whether inline
+  // scripts are allowed, so we can memoize based on that.
+  var boilerplateKey = JSON.stringify({
+    inlineScriptsAllowed: inlineScriptsAllowed,
+    htmlAttributes: htmlAttributes
+  });
+
+  if (! _.has(memoizedBoilerplate, boilerplateKey)) {
+    var boilerplateData = _.extend({
+      htmlAttributes: htmlAttributes,
+      inlineScriptsAllowed: WebAppInternals.inlineScriptsAllowed()
+    }, boilerplateBaseData);
+
+    memoizedBoilerplate[boilerplateKey] = "<!DOCTYPE html>\n" +
+      Blaze.toHTML(Blaze.With(boilerplateData, boilerplateFunc));
+  }
+  return memoizedBoilerplate[boilerplateKey];
+};
+
+// Serve static files from the manifest or added with
+// `addStaticJs`. Exported for tests.
+// Options are:
+//   - staticFiles: object mapping pathname of file in manifest -> {
+//     path, cacheable, sourceMapUrl, type }
+//   - clientDir: root directory for static files from client manifest
+WebAppInternals.staticFilesMiddleware = function (options, req, res, next) {
+  if ('GET' != req.method && 'HEAD' != req.method) {
+    next();
+    return;
+  }
+  var pathname = connect.utils.parseUrl(req).pathname;
+  var staticFiles = options.staticFiles;
+  var clientDir = options.clientDir;
+
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch (e) {
+    next();
+    return;
+  }
+
+  var serveStaticJs = function (s) {
+    res.writeHead(200, {
+      'Content-type': 'application/javascript; charset=UTF-8'
+    });
+    res.write(s);
+    res.end();
+  };
+
+  if (pathname === "/meteor_runtime_config.js" &&
+      ! WebAppInternals.inlineScriptsAllowed()) {
+    serveStaticJs("__meteor_runtime_config__ = " +
+                  JSON.stringify(__meteor_runtime_config__) + ";");
+    return;
+  } else if (_.has(additionalStaticJs, pathname) &&
+             ! WebAppInternals.inlineScriptsAllowed()) {
+    serveStaticJs(additionalStaticJs[pathname]);
+    return;
+  }
+
+  if (!_.has(staticFiles, pathname)) {
+    next();
+    return;
+  }
+
+  // We don't need to call pause because, unlike 'static', once we call into
+  // 'send' and yield to the event loop, we never call another handler with
+  // 'next'.
+
+  var info = staticFiles[pathname];
+
+  // Cacheable files are files that should never change. Typically
+  // named by their hash (eg meteor bundled js and css files).
+  // We cache them ~forever (1yr).
+  //
+  // We cache non-cacheable files anyway. This isn't really correct, as users
+  // can change the files and changes won't propagate immediately. However, if
+  // we don't cache them, browsers will 'flicker' when rerendering
+  // images. Eventually we will probably want to rewrite URLs of static assets
+  // to include a query parameter to bust caches. That way we can both get
+  // good caching behavior and allow users to change assets without delay.
+  // https://github.com/meteor/meteor/issues/773
+  var maxAge = info.cacheable
+        ? 1000 * 60 * 60 * 24 * 365
+        : 1000 * 60 * 60 * 24;
+
+  // Set the X-SourceMap header, which current Chrome understands.
+  // (The files also contain '//#' comments which FF 24 understands and
+  // Chrome doesn't understand yet.)
+  //
+  // Eventually we should set the SourceMap header but the current version of
+  // Chrome and no version of FF supports it.
+  //
+  // To figure out if your version of Chrome should support the SourceMap
+  // header,
+  //   - go to chrome://version. Let's say the Chrome version is
+  //      28.0.1500.71 and the Blink version is 537.36 (@153022)
+  //   - go to http://src.chromium.org/viewvc/blink/branches/chromium/1500/Source/core/inspector/InspectorPageAgent.cpp?view=log
+  //     where the "1500" is the third part of your Chrome version
+  //   - find the first revision that is no greater than the "153022"
+  //     number.  That's probably the first one and it probably has
+  //     a message of the form "Branch 1500 - blink@r149738"
+  //   - If *that* revision number (149738) is at least 151755,
+  //     then Chrome should support SourceMap (not just X-SourceMap)
+  // (The change is https://codereview.chromium.org/15832007)
+  //
+  // You also need to enable source maps in Chrome: open dev tools, click
+  // the gear in the bottom right corner, and select "enable source maps".
+  //
+  // Firefox 23+ supports source maps but doesn't support either header yet,
+  // so we include the '//#' comment for it:
+  //   https://bugzilla.mozilla.org/show_bug.cgi?id=765993
+  // In FF 23 you need to turn on `devtools.debugger.source-maps-enabled`
+  // in `about:config` (it is on by default in FF 24).
+  if (info.sourceMapUrl)
+    res.setHeader('X-SourceMap', info.sourceMapUrl);
+
+  if (info.type === "js") {
+    res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
+  } else if (info.type === "css") {
+    res.setHeader("Content-Type", "text/css; charset=UTF-8");
+  }
+
+  send(req, path.join(clientDir, info.path))
+    .maxage(maxAge)
+    .hidden(true)  // if we specified a dotfile in the manifest, serve it
+    .on('error', function (err) {
+      Log.error("Error serving static file " + err);
+      res.writeHead(500);
+      res.end();
+    })
+    .on('directory', function () {
+      Log.error("Unexpected directory " + info.path);
+      res.writeHead(500);
+      res.end();
+    })
+    .pipe(res);
+};
+
 var runWebAppServer = function () {
   var shuttingDown = false;
-  // read the control for the client we'll be serving up
-  var clientJsonPath = path.join(__meteor_bootstrap__.serverDir,
-                                 __meteor_bootstrap__.configJson.client);
-  var clientDir = path.dirname(clientJsonPath);
-  var clientJson = JSON.parse(fs.readFileSync(clientJsonPath, 'utf8'));
+  var syncQueue = new Meteor._SynchronousQueue();
 
-  if (clientJson.format !== "browser-program-pre1")
-    throw new Error("Unsupported format for client assets: " +
-                    JSON.stringify(clientJson.format));
+  var getItemPathname = function (itemUrl) {
+    return decodeURIComponent(url.parse(itemUrl).pathname);
+  };
+
+  var staticFiles;
+
+  var clientJsonPath;
+  var clientDir;
+  var clientJson;
+
+  WebAppInternals.reloadClientProgram = function () {
+    syncQueue.runTask(function() {
+      try {
+        // read the control for the client we'll be serving up
+        clientJsonPath = path.join(__meteor_bootstrap__.serverDir,
+                                   __meteor_bootstrap__.configJson.client);
+        clientDir = path.dirname(clientJsonPath);
+        clientJson = JSON.parse(readUtf8FileSync(clientJsonPath));
+        if (clientJson.format !== "browser-program-pre1")
+          throw new Error("Unsupported format for client assets: " +
+                          JSON.stringify(clientJson.format));
+
+        staticFiles = {};
+        _.each(clientJson.manifest, function (item) {
+          if (item.url && item.where === "client") {
+            staticFiles[getItemPathname(item.url)] = {
+              path: item.path,
+              cacheable: item.cacheable,
+              // Link from source to its map
+              sourceMapUrl: item.sourceMapUrl,
+              type: item.type
+            };
+
+            if (item.sourceMap) {
+              // Serve the source map too, under the specified URL. We assume all
+              // source maps are cacheable.
+              staticFiles[getItemPathname(item.sourceMapUrl)] = {
+                path: item.sourceMap,
+                cacheable: true
+              };
+            }
+          }
+        });
+        WebApp.clientProgram = {
+          manifest: clientJson.manifest
+          // XXX do we need a "root: clientDir" field here? it used to be here but
+          // was unused.
+        };
+
+        // Exported for tests.
+        WebAppInternals.staticFiles = staticFiles;
+      } catch (e) {
+        Log.error("Error reloading the client program: " + e.message);
+        process.exit(1);
+      }
+    });
+  };
+  WebAppInternals.reloadClientProgram();
+
+  if (! clientJsonPath || ! clientDir || ! clientJson)
+    throw new Error("Client config file not parsed.");
 
   // webserver
   var app = connect();
@@ -285,148 +499,13 @@ var runWebAppServer = function () {
   // generally pretty handy..
   app.use(connect.query());
 
-  var getItemPathname = function (itemUrl) {
-    return decodeURIComponent(url.parse(itemUrl).pathname);
-  };
-
-  var staticFiles = {};
-  _.each(clientJson.manifest, function (item) {
-    if (item.url && item.where === "client") {
-      staticFiles[getItemPathname(item.url)] = {
-        path: item.path,
-        cacheable: item.cacheable,
-        // Link from source to its map
-        sourceMapUrl: item.sourceMapUrl,
-        type: item.type
-      };
-
-      if (item.sourceMap) {
-        // Serve the source map too, under the specified URL. We assume all
-        // source maps are cacheable.
-        staticFiles[getItemPathname(item.sourceMapUrl)] = {
-          path: item.sourceMap,
-          cacheable: true
-        };
-      }
-    }
-  });
-
-  // Exported for tests.
-  WebAppInternals.staticFiles = staticFiles;
-
-
   // Serve static files from the manifest.
   // This is inspired by the 'static' middleware.
   app.use(function (req, res, next) {
-    if ('GET' != req.method && 'HEAD' != req.method) {
-      next();
-      return;
-    }
-    var pathname = connect.utils.parseUrl(req).pathname;
-
-    try {
-      pathname = decodeURIComponent(pathname);
-    } catch (e) {
-      next();
-      return;
-    }
-
-    var serveStaticJs = function (s) {
-      res.writeHead(200, {
-        'Content-type': 'application/javascript; charset=UTF-8'
-      });
-      res.write(s);
-      res.end();
-    };
-
-    if (pathname === "/meteor_runtime_config.js" &&
-        ! WebAppInternals.inlineScriptsAllowed()) {
-      serveStaticJs("__meteor_runtime_config__ = " +
-                    JSON.stringify(__meteor_runtime_config__) + ";");
-      return;
-    } else if (pathname === "/meteor_reload_safetybelt.js" &&
-               ! WebAppInternals.inlineScriptsAllowed()) {
-      serveStaticJs(RELOAD_SAFETYBELT);
-      return;
-    }
-
-    if (!_.has(staticFiles, pathname)) {
-      next();
-      return;
-    }
-
-    // We don't need to call pause because, unlike 'static', once we call into
-    // 'send' and yield to the event loop, we never call another handler with
-    // 'next'.
-
-    var info = staticFiles[pathname];
-
-    // Cacheable files are files that should never change. Typically
-    // named by their hash (eg meteor bundled js and css files).
-    // We cache them ~forever (1yr).
-    //
-    // We cache non-cacheable files anyway. This isn't really correct, as users
-    // can change the files and changes won't propagate immediately. However, if
-    // we don't cache them, browsers will 'flicker' when rerendering
-    // images. Eventually we will probably want to rewrite URLs of static assets
-    // to include a query parameter to bust caches. That way we can both get
-    // good caching behavior and allow users to change assets without delay.
-    // https://github.com/meteor/meteor/issues/773
-    var maxAge = info.cacheable
-          ? 1000 * 60 * 60 * 24 * 365
-          : 1000 * 60 * 60 * 24;
-
-    // Set the X-SourceMap header, which current Chrome understands.
-    // (The files also contain '//#' comments which FF 24 understands and
-    // Chrome doesn't understand yet.)
-    //
-    // Eventually we should set the SourceMap header but the current version of
-    // Chrome and no version of FF supports it.
-    //
-    // To figure out if your version of Chrome should support the SourceMap
-    // header,
-    //   - go to chrome://version. Let's say the Chrome version is
-    //      28.0.1500.71 and the Blink version is 537.36 (@153022)
-    //   - go to http://src.chromium.org/viewvc/blink/branches/chromium/1500/Source/core/inspector/InspectorPageAgent.cpp?view=log
-    //     where the "1500" is the third part of your Chrome version
-    //   - find the first revision that is no greater than the "153022"
-    //     number.  That's probably the first one and it probably has
-    //     a message of the form "Branch 1500 - blink@r149738"
-    //   - If *that* revision number (149738) is at least 151755,
-    //     then Chrome should support SourceMap (not just X-SourceMap)
-    // (The change is https://codereview.chromium.org/15832007)
-    //
-    // You also need to enable source maps in Chrome: open dev tools, click
-    // the gear in the bottom right corner, and select "enable source maps".
-    //
-    // Firefox 23+ supports source maps but doesn't support either header yet,
-    // so we include the '//#' comment for it:
-    //   https://bugzilla.mozilla.org/show_bug.cgi?id=765993
-    // In FF 23 you need to turn on `devtools.debugger.source-maps-enabled`
-    // in `about:config` (it is on by default in FF 24).
-    if (info.sourceMapUrl)
-      res.setHeader('X-SourceMap', info.sourceMapUrl);
-
-    if (info.type === "js") {
-      res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
-    } else if (info.type === "css") {
-      res.setHeader("Content-Type", "text/css; charset=UTF-8");
-    }
-
-    send(req, path.join(clientDir, info.path))
-      .maxage(maxAge)
-      .hidden(true)  // if we specified a dotfile in the manifest, serve it
-      .on('error', function (err) {
-        Log.error("Error serving static file " + err);
-        res.writeHead(500);
-        res.end();
-      })
-      .on('directory', function () {
-        Log.error("Unexpected directory " + info.path);
-        res.writeHead(500);
-        res.end();
-      })
-      .pipe(res);
+    return WebAppInternals.staticFilesMiddleware({
+      staticFiles: staticFiles,
+      clientDir: clientDir
+    }, req, res, next);
   });
 
   // Packages and apps can add handlers to this via WebApp.connectHandlers.
@@ -447,19 +526,14 @@ var runWebAppServer = function () {
     res.end("An error message");
   });
 
-  // Will be updated by main before we listen.
-  var boilerplateTemplate = null;
-  var boilerplateBaseData = null;
-  var boilerplateByAttributes = {};
   app.use(function (req, res, next) {
     if (! appUrl(req.url))
       return next();
 
-    if (!boilerplateTemplate)
-      throw new Error("boilerplateTemplate should be set before listening!");
+    if (!boilerplateFunc)
+      throw new Error("boilerplateFunc should be set before listening!");
     if (!boilerplateBaseData)
       throw new Error("boilerplateBaseData should be set before listening!");
-
 
     var headers = {
       'Content-Type':  'text/html; charset=utf-8'
@@ -480,31 +554,18 @@ var runWebAppServer = function () {
       return undefined;
     }
 
-    var htmlAttributes = getHtmlAttributes(request);
-
-    // The only thing that changes from request to request (for now) are the
-    // HTML attributes (used by, eg, appcache), so we can memoize based on that.
-    var attributeKey = JSON.stringify(htmlAttributes);
-    if (!_.has(boilerplateByAttributes, attributeKey)) {
-      try {
-        var boilerplateData = _.extend({htmlAttributes: htmlAttributes},
-                                       boilerplateBaseData);
-        var boilerplateInstance = boilerplateTemplate.extend({
-          data: boilerplateData
-        });
-        var boilerplateHtmlJs = boilerplateInstance.render();
-        boilerplateByAttributes[attributeKey] = "<!DOCTYPE html>\n" +
-              HTML.toHTML(boilerplateHtmlJs, boilerplateInstance);
-      } catch (e) {
-        Log.error("Error running template: " + e);
-        res.writeHead(500, headers);
-        res.end();
-        return undefined;
-      }
+    var boilerplate;
+    try {
+      boilerplate = getBoilerplate(request);
+    } catch (e) {
+      Log.error("Error running template: " + e);
+      res.writeHead(500, headers);
+      res.end();
+      return undefined;
     }
 
     res.writeHead(200, headers);
-    res.write(boilerplateByAttributes[attributeKey]);
+    res.write(boilerplate);
     res.end();
     return undefined;
   });
@@ -568,12 +629,6 @@ var runWebAppServer = function () {
     connectHandlers: packageAndAppHandlers,
     rawConnectHandlers: rawConnectHandlers,
     httpServer: httpServer,
-    // metadata about the client program that we serve
-    clientProgram: {
-      manifest: clientJson.manifest
-      // XXX do we need a "root: clientDir" field here? it used to be here but
-      // was unused.
-    },
     // For testing.
     suppressConnectErrors: function () {
       suppressConnectErrors = true;
@@ -602,48 +657,66 @@ var runWebAppServer = function () {
     // '--keepalive' is a use of the option.
     var expectKeepalives = _.contains(argv, '--keepalive');
 
-    boilerplateBaseData = {
-      css: [],
-      js: [],
-      head: '',
-      body: '',
-      inlineScriptsAllowed: WebAppInternals.inlineScriptsAllowed(),
-      meteorRuntimeConfig: JSON.stringify(__meteor_runtime_config__),
-      reloadSafetyBelt: RELOAD_SAFETYBELT,
-      rootUrlPathPrefix: __meteor_runtime_config__.ROOT_URL_PATH_PREFIX || '',
-      bundledJsCssPrefix: bundledJsCssPrefix ||
-        __meteor_runtime_config__.ROOT_URL_PATH_PREFIX || ''
-    };
-
-    _.each(WebApp.clientProgram.manifest, function (item) {
-      if (item.type === 'css' && item.where === 'client') {
-        boilerplateBaseData.css.push({url: item.url});
-      }
-      if (item.type === 'js' && item.where === 'client') {
-        boilerplateBaseData.js.push({url: item.url});
-      }
-      if (item.type === 'head') {
-        boilerplateBaseData.head = fs.readFileSync(
-          path.join(clientDir, item.path), 'utf8');
-      }
-      if (item.type === 'body') {
-        boilerplateBaseData.body = fs.readFileSync(
-          path.join(clientDir, item.path), 'utf8');
-      }
-    });
-
     var boilerplateTemplateSource = Assets.getText("boilerplate.html");
-    var boilerplateRenderCode = Spacebars.compile(
-      boilerplateTemplateSource, { isBody: true });
 
-    // Note that we are actually depending on eval's local environment capture
-    // so that UI and HTML are visible to the eval'd code.
-    var boilerplateRender = eval(boilerplateRenderCode);
+    // Exported to allow client-side only changes to rebuild the boilerplate
+    // without requiring a full server restart.
+    WebAppInternals.generateBoilerplate = function () {
+      syncQueue.runTask(function() {
+        boilerplateBaseData = {
+          // 'htmlAttributes' and 'inlineScriptsAllowed' are set at render
+          // time, because they are allowed to change from request to
+          // request.
+          css: [],
+          js: [],
+          head: '',
+          body: '',
+          additionalStaticJs: _.map(
+            additionalStaticJs,
+            function (contents, pathname) {
+              return {
+                pathname: pathname,
+                contents: contents
+              };
+            }
+          ),
+          meteorRuntimeConfig: JSON.stringify(__meteor_runtime_config__),
+          rootUrlPathPrefix: __meteor_runtime_config__.ROOT_URL_PATH_PREFIX || '',
+          bundledJsCssPrefix: bundledJsCssPrefix ||
+            __meteor_runtime_config__.ROOT_URL_PATH_PREFIX || ''
+        };
 
-    boilerplateTemplate = UI.Component.extend({
-      kind: "MainPage",
-      render: boilerplateRender
-    });
+        _.each(WebApp.clientProgram.manifest, function (item) {
+          if (item.type === 'css' && item.where === 'client') {
+            boilerplateBaseData.css.push({url: item.url});
+          }
+          if (item.type === 'js' && item.where === 'client') {
+            boilerplateBaseData.js.push({url: item.url});
+          }
+          if (item.type === 'head') {
+            boilerplateBaseData.head =
+              readUtf8FileSync(path.join(clientDir, item.path));
+          }
+          if (item.type === 'body') {
+            boilerplateBaseData.body =
+              readUtf8FileSync(path.join(clientDir, item.path));
+          }
+        });
+
+        var boilerplateRenderCode = SpacebarsCompiler.compile(
+          boilerplateTemplateSource, { isBody: true });
+
+        // Note that we are actually depending on eval's local environment capture
+        // so that UI and HTML are visible to the eval'd code.
+        boilerplateFunc = eval(boilerplateRenderCode);
+
+        // Clear the memoized boilerplate cache.
+        memoizedBoilerplate = {};
+
+        WebAppInternals.refreshableAssets = { allCss: boilerplateBaseData.css };
+      });
+    };
+    WebAppInternals.generateBoilerplate();
 
     // only start listening after all the startup code has run.
     var localPort = parseInt(process.env.PORT) || 0;
@@ -1011,3 +1084,16 @@ WebAppInternals.setInlineScriptsAllowed = function (value) {
 WebAppInternals.setBundledJsCssPrefix = function (prefix) {
   bundledJsCssPrefix = prefix;
 };
+
+// Packages can call `WebAppInternals.addStaticJs` to specify static
+// JavaScript to be included in the app. This static JS will be inlined,
+// unless inline scripts have been disabled, in which case it will be
+// served under `/<sha1 of contents>`.
+var additionalStaticJs = {};
+WebAppInternals.addStaticJs = function (contents) {
+  additionalStaticJs["/" + sha1(contents) + ".js"] = contents;
+};
+
+// Exported for tests
+WebAppInternals.getBoilerplate = getBoilerplate;
+WebAppInternals.additionalStaticJs = additionalStaticJs;
