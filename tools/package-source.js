@@ -451,8 +451,11 @@ _.extend(PackageSource.prototype, {
             self.earliestCompatibleVersion = value;
           }
           else {
-            buildmessage.error("unknown attribute '" + key + "' " +
-                               "in package description");
+            // SPECIAL LENIENT PATCH VERSION.
+            // buildmessage.error("unknown attribute '" + key + "' " +
+            //                   "in package description");
+            process.stderr.write("Unknown attribute '" + key + "' " +
+                                "in package description: ignoring. \n");
           }
         });
       },
@@ -662,6 +665,13 @@ _.extend(PackageSource.prototype, {
       // parse as semver. Anyway, apps don't have versions, so it's
       // not like we didn't already have to think about this case.
     }
+
+    // SPECIAL LENIENT PATCH VERSION.
+    if (self.metadata.summary.length > 100) {
+      process.stderr.write("Cutting off summary at 100 chars. \n");
+      self.metadata.summary = self.metadata.summary.slice(0, 100);
+    };
+    // /SPECIAL LENIENT PATCH VERSION.
 
     if (self.version !== null && typeof(self.version) !== "string") {
       if (!buildmessage.jobHasMessages()) {
