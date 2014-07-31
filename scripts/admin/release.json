@@ -1,0 +1,7 @@
+{
+ "track": "METEOR-CORE",
+ "version": "0.9.0-preview5",
+ "official": true,
+ "recommended": true,
+ "description": "More preview of meteor packaging"
+}

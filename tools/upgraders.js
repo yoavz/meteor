@@ -50,7 +50,19 @@ var upgradersByName = {
 //     console.log(
 // "1.7.2: Oh gosh never mind, change all your code again.");
 //     console.log();
-//   }
+//   },
+  "notices-for-preview5": function () {
+    maybePrintNoticeHeader();
+    console.log(
+      "preview5: \n   No longer write separate version files for tests in packages.");
+    console.log(
+        "Store package version files as 'versions.json'" +
+        "instead of '[packageName]-versions.json'.");
+    console.log("If your local package directory contains [packageName]-versions.json files" +
+               " you should feel free to delete them or rename to versions.json. \n" +
+                "Old version files are no longer used.");
+    console.log();
+  }
 };
 
 exports.runUpgrader = function (upgraderName) {
