@@ -666,7 +666,7 @@ _.extend(PackageSource.prototype, {
     }
 
     // SPECIAL LENIENT PATCH VERSION.
-    if (self.metadata.summary.length > 100) {
+    if (self.metadata.summary && self.metadata.summary.length > 100) {
       process.stderr.write("Cutting off summary at 100 chars. \n");
       self.metadata.summary = self.metadata.summary.slice(0, 100);
     };
