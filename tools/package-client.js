@@ -62,12 +62,11 @@ exports.loadCachedServerData = function (packageStorageFile) {
     var data = fs.readFileSync(config.getPackageStorage(), 'utf8');
   } catch (e) {
     if (e.code == 'ENOENT') {
-//      process.stderr.write("No cached server data found on disk.\n");
       return noDataToken;
     }
     // XXX we should probably return an error to the caller here to
     // figure out how to handle it
-    console.log(e.message);
+    process.stderr.write("ERROR " + e.message + "\n");
     process.exit(1);
   }
   var ret = noDataToken;
@@ -75,7 +74,10 @@ exports.loadCachedServerData = function (packageStorageFile) {
     ret = JSON.parse(data);
   } catch (err) {
     // XXX error handling
-    console.log("Could not parse JSON in data.json.");
+    process.stderr.write(
+      "ERROR: Could not parse JSON for local package-metadata cache. \n");
+    // This should only happen if you decided to manually edit this or
+    // whatever. Regardless, go on and treat this as an empty file.
   }
   return ret;
 };
@@ -195,7 +197,7 @@ exports.updateServerPackageData = function (cachedServerData, _optionsForTest) {
       useShortPages: _optionsForTest.useShortPages
     });
   } catch (err) {
-    console.log(err);
+    process.stderr.write("ERROR " + err.message + "\n");
     if (err instanceof ServiceConnection.ConnectionTimeoutError) {
       return null;
     } else {
@@ -334,6 +336,8 @@ var uploadTarball = function (putUrl, tarball) {
 exports.uploadTarball = uploadTarball;
 
 var bundleBuild = function (unipackage) {
+  buildmessage.assertInJob();
+
   var tempDir = files.mkdtemp('build-package-');
   var packageTarName = unipackage.tarballName();
   var tarInputDir = path.join(tempDir, packageTarName);
@@ -350,7 +354,18 @@ var bundleBuild = function (unipackage) {
   files.createTarball(tarInputDir, buildTarball);
 
   var tarballHash = files.fileHash(buildTarball);
-  var treeHash = files.treeHash(tarInputDir);
+  var treeHash = files.treeHash(tarInputDir, {
+    // We don't include any package.json from an npm module in the tree hash,
+    // because npm isn't super consistent about what it puts in there (eg, does
+    // it include the "readme" field)? This ends up leading to spurious
+    // differences. The tree hash will still notice any actual CODE changes in
+    // the npm packages.
+    ignore: function (relativePath) {
+      var pieces = relativePath.split(path.sep);
+      return pieces.length && _.last(pieces) === 'package.json'
+        && _.contains(pieces, 'npm');
+    }
+  });
 
   return {
     buildTarball: buildTarball,
@@ -362,6 +377,8 @@ var bundleBuild = function (unipackage) {
 exports.bundleBuild = bundleBuild;
 
 var createAndPublishBuiltPackage = function (conn, unipackage) {
+  buildmessage.assertInJob();
+
   process.stdout.write('Creating package build...\n');
   var uploadInfo = conn.call('createPackageBuild', {
     packageName: unipackage.name,
@@ -370,6 +387,8 @@ var createAndPublishBuiltPackage = function (conn, unipackage) {
   });
 
   var bundleResult = bundleBuild(unipackage);
+  if (buildmessage.jobHasMessages())
+    return;
 
   process.stdout.write('Uploading build...\n');
   uploadTarball(uploadInfo.uploadUrl,
@@ -382,7 +401,7 @@ var createAndPublishBuiltPackage = function (conn, unipackage) {
       bundleResult.tarballHash,
       bundleResult.treeHash);
   } catch (err) {
-    console.log(err);
+    process.stderr.write("ERROR " + err.message + "\n");
     return;
   }
 
@@ -425,6 +444,8 @@ exports.handlePackageServerConnectionError = function (error) {
 //
 // Return true on success and an error code otherwise.
 exports.publishPackage = function (packageSource, compileResult, conn, options) {
+  buildmessage.assertInJob();
+
   options = options || {};
 
   if (options.new && options.existingVersion)
@@ -479,7 +500,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
     }
     var authorized = _.indexOf(
       _.pluck(packRecord.maintainers, 'username'), auth.loggedInUsername());
-    if (authorized == -1) {
+    if (authorized == -1 && name.indexOf(":") !== -1) {
       process.stderr.write('You are not an authorized maintainer of ' + name + ".\n");
       process.stderr.write('Only authorized maintainers may publish new versions. \n');
       return 1;
@@ -534,7 +555,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
     });
 
   if (messages.hasMessages()) {
-    process.stdout.write(messages.formatMessages());
+    process.stderr.write(messages.formatMessages());
     return 1;
   }
 
@@ -564,7 +585,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
         name: packageSource.name
       });
     } catch (err) {
-      console.log(err.message);
+      process.stderr.write(err.message + "\n");
       return 1;
     }
 
@@ -598,8 +619,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
     try {
       var uploadInfo = conn.call('createPackageVersion', uploadRec);
     } catch (err) {
-      console.log("ERROR:", err.message);
-      console.log("Package could not be published.");
+      process.stderr.write("ERROR " + err.message + "\n");
       return 1;
     }
 
@@ -617,7 +637,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
                 { tarballHash: sourceBundleResult.tarballHash,
                   treeHash: sourceBundleResult.treeHash });
     } catch (err) {
-      console.log(err.message);
+      process.stderr.write("ERROR " + err.message + "\n");
       return 1;
     }
 

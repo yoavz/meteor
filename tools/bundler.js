@@ -1452,6 +1452,27 @@ var writeFile = function (file, builder) {
   builder.write(file.targetPath, { data: file.contents() });
 };
 
+// Writes a target a path in 'programs'
+var writeTargetToPath = function (name, target, outputPath, options) {
+  var builder = new Builder({
+    outputPath: path.join(outputPath, 'programs', name),
+    symlink: options.includeNodeModulesSymlink
+  });
+
+  var relControlFilePath =
+    target.write(builder, {
+      includeNodeModulesSymlink: options.includeNodeModulesSymlink,
+      getRelativeTargetPath: options.getRelativeTargetPath });
+
+  builder.complete();
+
+  return {
+    name: name,
+    arch: target.mostCompatibleArch(),
+    path: path.join('programs', name, relControlFilePath)
+  };
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // writeSiteArchive
 ///////////////////////////////////////////////////////////////////////////////
@@ -1495,51 +1516,6 @@ var writeSiteArchive = function (targets, outputPath, options) {
       meteorRelease: options.releaseName
     };
 
-    // Pick a path in the bundle for each target
-    var paths = {};
-    _.each(targets, function (target, name) {
-      var p = path.join('programs', name);
-      builder.reserve(p, { directory: true });
-      paths[name] = p;
-    });
-
-    // Hack to let servers find relative paths to clients. Should find
-    // another solution eventually (probably some kind of mount
-    // directive that mounts the client bundle in the server at runtime)
-    var getRelativeTargetPath = function (options) {
-      var pathForTarget = function (target) {
-        var name;
-        _.each(targets, function (t, n) {
-          if (t === target)
-            name = n;
-        });
-        if (! name)
-          throw new Error("missing target?");
-
-        if (! (name in paths))
-          throw new Error("missing target path?");
-
-        return paths[name];
-      };
-
-      return path.relative(pathForTarget(options.relativeTo),
-                           pathForTarget(options.forTarget));
-    };
-
-    // Write out each target
-    _.each(targets, function (target, name) {
-      var relControlFilePath =
-        target.write(builder.enter(paths[name]), {
-          includeNodeModulesSymlink: options.includeNodeModulesSymlink,
-          getRelativeTargetPath: getRelativeTargetPath });
-
-      json.programs.push({
-        name: name,
-        arch: target.mostCompatibleArch(),
-        path: path.join(paths[name], relControlFilePath)
-      });
-    });
-
     // Tell Galaxy what version of the dependency kit we're using, so
     // it can load the right modules. (Include this even if we copied
     // or symlinked a node_modules, since that's probably enough for
@@ -1574,9 +1550,6 @@ var writeSiteArchive = function (targets, outputPath, options) {
       'utf8')});
     }
 
-    // Control file
-    builder.writeJson('star.json', json);
-
     // Merge the WatchSet of everything that went into the bundle.
     var clientWatchSet = new watch.WatchSet();
     var serverWatchSet = new watch.WatchSet();
@@ -1588,6 +1561,19 @@ var writeSiteArchive = function (targets, outputPath, options) {
         serverWatchSet.merge(s.getWatchSet());
       }
     });
+
+    _.each(targets, function (target, name) {
+      json.programs.push(writeTargetToPath(name, target, builder.buildPath, {
+        includeNodeModulesSymlink: options.includeNodeModulesSymlink,
+        builtBy: options.builtBy,
+        controlProgram: options.controlProgram,
+        releaseName: options.releaseName,
+        getRelativeTargetPath: options.getRelativeTargetPath
+      }));
+    });
+
+    // Control file
+    builder.writeJson('star.json', json);
 
     // We did it!
     builder.complete();
@@ -1627,6 +1613,9 @@ var writeSiteArchive = function (targets, outputPath, options) {
  * - buildOptions: may include
  *   - minify: minify the CSS and JS assets (boolean, default false)
  *   - arch: the server architecture to target (defaults to archinfo.host())
+ *
+ * - hasCachedBundle: true if we already have a cached bundle stored in
+ *   /build. When true, we only build the new client targets in the bundle.
  *
  * Returns an object with keys:
  * - errors: A buildmessage.MessageSet, or falsy if bundling succeeded.
@@ -1750,9 +1739,11 @@ exports.bundle = function (options) {
       targets.client = client;
 
       // Server
-      var server = options.cachedServerTarget || makeServerTarget(app, client);
-      server.clientTarget = client;
-      targets.server = server;
+      if (! options.hasCachedBundle) {
+        var server = makeServerTarget(app, client);
+        server.clientTarget = client;
+        targets.server = server;
+      }
     }
 
     // Pick up any additional targets in /programs
@@ -1902,15 +1893,47 @@ exports.bundle = function (options) {
     if (! (controlProgram in targets))
       controlProgram = undefined;
 
+
+    // Hack to let servers find relative paths to clients. Should find
+    // another solution eventually (probably some kind of mount
+    // directive that mounts the client bundle in the server at runtime)
+    var getRelativeTargetPath = function (options) {
+      var pathForTarget = function (target) {
+        var name;
+        _.each(targets, function (t, n) {
+          if (t === target)
+            name = n;
+        });
+        if (! name)
+          throw new Error("missing target?");
+        return path.join('programs', name);
+      };
+
+      return path.relative(pathForTarget(options.relativeTo),
+                           pathForTarget(options.forTarget));
+    };
+
     // Write to disk
-    starResult = writeSiteArchive(targets, outputPath, {
+    var writeOptions = {
       includeNodeModulesSymlink: includeNodeModulesSymlink,
       builtBy: builtBy,
       controlProgram: controlProgram,
-      releaseName: releaseName
-    });
-    serverWatchSet.merge(starResult.serverWatchSet);
-    clientWatchSet.merge(starResult.clientWatchSet);
+      releaseName: releaseName,
+      getRelativeTargetPath: getRelativeTargetPath
+    };
+
+    if (options.hasCachedBundle) {
+      // If we already have a cached bundle, just recreate the new targets.
+      // XXX This might make the contents of "star.json" out of date.
+      _.each(targets, function (target, name) {
+        writeTargetToPath(name, target, outputPath, writeOptions);
+        clientWatchSet.merge(target.getWatchSet());
+      });
+    } else {
+      starResult = writeSiteArchive(targets, outputPath, writeOptions);
+      serverWatchSet.merge(starResult.serverWatchSet);
+      clientWatchSet.merge(starResult.clientWatchSet);
+    }
 
     success = true;
   });
@@ -1922,8 +1945,7 @@ exports.bundle = function (options) {
     errors: success ? false : messages,
     serverWatchSet: serverWatchSet,
     clientWatchSet: clientWatchSet,
-    starManifest: starResult && starResult.starManifest,
-    serverTarget: targets.server
+    starManifest: starResult && starResult.starManifest
   };
 };
 

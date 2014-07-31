@@ -171,8 +171,9 @@ main.registerCommand({
     });
   };
 
-
-  var messages = buildmessage.capture(function () {
+  var messages = buildmessage.capture({
+    title: 'getting packages ready'
+  }, function () {
     // First, build all accessible *local* packages, whether or not this app
     // uses them.  Use the "all packages are local" loader.
     loadPackages(catalog.complete.getLocalPackageNames(),
@@ -199,7 +200,7 @@ main.registerCommand({
   });
 
   if (messages.hasMessages()) {
-    process.stdout.write("\n" + messages.formatMessages());
+    process.stderr.write("\n" + messages.formatMessages());
     return 1;
   };
 
@@ -545,8 +546,8 @@ main.registerCommand({
     }
   });
   if (bundleResult.errors) {
-    process.stdout.write("Errors prevented bundling:\n");
-    process.stdout.write(bundleResult.errors.formatMessages());
+    process.stderr.write("Errors prevented bundling:\n");
+    process.stderr.write(bundleResult.errors.formatMessages());
     return 1;
   }
 
@@ -1014,7 +1015,7 @@ main.registerCommand({
     });
 
     if (messages.hasMessages()) {
-      process.stdout.write("\n" + messages.formatMessages());
+      process.stderr.write("\n" + messages.formatMessages());
       return 1;
     }
   }
@@ -1133,7 +1134,7 @@ main.registerCommand({
   if (count)
     console.log("Built " + count + " packages.");
   if (messages.hasMessages()) {
-    process.stdout.write("\n" + messages.formatMessages());
+    process.stderr.write("\n" + messages.formatMessages());
     return 1;
   }
 });
@@ -1259,7 +1260,7 @@ main.registerCommand({
   });
 
   if (messages.hasMessages()) {
-    process.stdout.write("\n" + messages.formatMessages());
+    process.stderr.write("\n" + messages.formatMessages());
     return 1;
   };
 
@@ -1409,7 +1410,7 @@ main.registerCommand({
     browserstack: options.browserstack
   };
 
- return selftest.runTests({
+  return selftest.runTests({
     onlyChanged: options.changed,
     offline: offline,
     includeSlowTests: options.slow,

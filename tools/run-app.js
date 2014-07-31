@@ -423,7 +423,7 @@ _.extend(AppRunner.prototype, {
 
     // Cache the server target because the server will not change inside
     // a single invocation of _runOnce().
-    var cachedServerTarget = null;
+    var cachedServerWatchSet;
     var bundleApp = function () {
       if (! self.firstRun)
         packageCache.packageCache.refresh(true); // pick up changes to packages
@@ -432,10 +432,17 @@ _.extend(AppRunner.prototype, {
         outputPath: bundlePath,
         includeNodeModulesSymlink: true,
         buildOptions: self.buildOptions,
-        cachedServerTarget: cachedServerTarget
+        hasCachedBundle: !! cachedServerWatchSet
       });
 
-      cachedServerTarget = bundle.serverTarget;
+      // Keep the server watch set from the initial bundle, because subsequent
+      // bundles will not contain a server target.
+      if (cachedServerWatchSet) {
+        bundle.serverWatchSet = cachedServerWatchSet;
+      } else {
+        cachedServerWatchSet = bundle.serverWatchSet;
+      }
+
       return bundle;
     };
 
