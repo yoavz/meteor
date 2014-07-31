@@ -11,6 +11,7 @@ var packageLoader = require('./package-loader.js');
 var Future = require('fibers/future');
 var uniload = require('./uniload.js');
 var config = require('./config.js');
+var buildmessage = require('./buildmessage.js');
 var util = require('util');
 var child_process = require('child_process');
 var webdriver = require('browserstack-webdriver');
@@ -65,14 +66,14 @@ var expectThrows = markStack(function (f) {
 });
 
 var getToolsPackage = function () {
+  buildmessage.assertInCapture();
   // Rebuild the tool package --- necessary because we don't actually
   // rebuild the tool in the cached version every time.
   if (catalog.complete.rebuildLocalPackages([toolPackageName]) !== 1) {
     throw Error("didn't rebuild meteor-tool?");
   }
   var loader = new packageLoader.PackageLoader({versions: null});
-  var toolPackage = loader.getPackage(toolPackageName);
-  return toolPackage;
+  return loader.getPackage(toolPackageName);
 };
 
 // Execute a command synchronously, discarding stderr.
@@ -338,10 +339,15 @@ _.extend(OutputLog.prototype, {
 //   'fake-mongod' stub process to be started instead of 'mongod'. The
 //   tellMongo method then becomes available on Runs for controlling
 //   the stub.
+// - clients
+//   - browserstack: true if browserstack clients should be used
+//   - port: the port that the clients should run on
 
 var Sandbox = function (options) {
   var self = this;
-  options = options || {};
+  // default options
+  options = _.extend({ clients: {} }, options);
+
   self.root = files.mkdtemp();
   self.warehouse = null;
 
@@ -368,13 +374,13 @@ var Sandbox = function (options) {
 
   self.clients = [ new PhantomClient({
     host: 'localhost',
-    port: 3000
+    port: options.clients.port || 3000
   })];
 
   if (options.clients && options.clients.browserstack) {
     self.clients.push(new BrowserStackClient({
       host: 'localhost',
-      port: 3000
+      port: options.clients.port || 3000
     }));
   }
 
@@ -409,6 +415,7 @@ _.extend(Sandbox.prototype, {
   // });
   testWithAllClients: function (f) {
     var self = this;
+    var argsArray = _.compact(_.toArray(arguments).slice(1));
 
     if (self.clients.length) {
       console.log("running test with " + self.clients.length + " client(s).");
@@ -420,7 +427,7 @@ _.extend(Sandbox.prototype, {
       console.log("testing with " + client.name + "...");
       f(new Run(self.execPath, {
         sandbox: self,
-        args: [],
+        args: argsArray,
         cwd: self.cwd,
         env: self._makeEnv(),
         fakeMongo: self.fakeMongo,
@@ -527,7 +534,7 @@ _.extend(Sandbox.prototype, {
     };
     self.write(to, contents);
   },
-
+  
   // Delete a file in the sandbox. 'filename' is as in write().
   unlink: function (filename) {
     var self = this;
@@ -615,12 +622,18 @@ _.extend(Sandbox.prototype, {
     // be building some packages besides meteor-tool (so that we can
     // build apps that contain core packages).
 
-    var toolPackage = getToolsPackage();
-    var toolPackageDirectory =
-          '.' + toolPackage.version + '.XXX++'
-          + toolPackage.buildArchitectures();
-    toolPackage.saveToPath(path.join(self.warehouse, packagesDirectoryName,
-                                     toolPackageName, toolPackageDirectory));
+    var toolPackage, toolPackageDirectory;
+    var messages = buildmessage.capture(function () {
+      toolPackage = getToolsPackage();
+      toolPackageDirectory = '.' + toolPackage.version + '.XXX++'
+        + toolPackage.buildArchitectures();
+      toolPackage.saveToPath(path.join(self.warehouse, packagesDirectoryName,
+                                       toolPackageName, toolPackageDirectory));
+    });
+    if (messages.hasMessages()) {
+      throw Error(messages.formatMessages());
+    }
+
     fs.symlinkSync(toolPackageDirectory,
                    path.join(self.warehouse, packagesDirectoryName,
                              toolPackageName, toolPackage.version));
@@ -718,7 +731,7 @@ _.extend(Sandbox.prototype, {
         // Insert into builds. Assume the package is available for all
         // architectures.
         stubCatalog.collections.builds.push({
-          buildArchitectures: "browser+os",
+          buildArchitectures: "web.browser+os",
           versionId: versionRec._id,
           build: buildRec.build,
           _id: utils.randomToken()
@@ -1559,5 +1572,6 @@ _.extend(exports, {
   fail: fail,
   expectEqual: expectEqual,
   expectThrows: expectThrows,
-  getToolsPackage: getToolsPackage
+  getToolsPackage: getToolsPackage,
+  execFileSync: execFileSync
 });
