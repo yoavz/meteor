@@ -17,7 +17,7 @@
 #   - Linux: x86 and x86_64 systems
 
 
-RELEASE="0.9.0-preview2"
+RELEASE="0.9.0-preview-final"
 
 
 # Now, on to the actual installer!
