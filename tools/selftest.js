@@ -362,7 +362,7 @@ var Sandbox = function (options) {
   // server. Tests that publish packages should have this flag; tests that
   // assume that the release's packages can be found on the server should not.
   if (runningTest.tags['test-package-server']) {
-    self.set('METEOR_PACKAGE_SERVER_URL', 'https://test-packages.meteor.com');
+    self.set('METEOR_PACKAGE_SERVER_URL', 'https://packages.meteor.com');
   }
 
   if (_.has(options, 'warehouse')) {
@@ -534,7 +534,7 @@ _.extend(Sandbox.prototype, {
     };
     self.write(to, contents);
   },
-  
+
   // Delete a file in the sandbox. 'filename' is as in write().
   unlink: function (filename) {
     var self = this;
