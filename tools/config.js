@@ -131,7 +131,7 @@ _.extend(exports, {
     if (isLocalUniverse()) {
       return localhostOffset(20);
     } else {
-      return getUniverse().replace(/^www\./, 'packages-atmosphere.');
+      return getUniverse().replace(/^www\./, 'packages.');
     }
   },
 
