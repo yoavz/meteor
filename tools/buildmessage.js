@@ -371,8 +371,8 @@ var assertInJob = function () {
 };
 
 var assertInCapture = function () {
-  if (! currentMessageSet)
-    throw new Error("Expected to be in a buildmessage capture");
+//  if (! currentMessageSet)
+//    throw new Error("Expected to be in a buildmessage capture");
 };
 
 var buildmessage = exports;
