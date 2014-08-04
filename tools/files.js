@@ -240,6 +240,31 @@ files.rm_recursive = function (p) {
     fs.unlinkSync(p);
 };
 
+// List all the files.
+files.ls_recursive = function (p) {
+  var all = [];
+  try {
+    // the l in lstat is critical -- we want to remove symbolic
+    // links, not what they point to
+    var stat = fs.statSync(p);
+  } catch (e) {
+    if (e.code == "ENOENT")
+      return [];
+    throw e;
+  }
+
+  if (stat.isDirectory()) {
+    _.each(fs.readdirSync(p), function (file) {
+      file = path.join(p, file);
+      all = all.concat(files.ls_recursive(file));
+    });
+  } else {
+    all.push(p);
+  }
+  return all;
+};
+
+
 // Makes all files in a tree read-only.
 var makeTreeReadOnly = function (p) {
   try {

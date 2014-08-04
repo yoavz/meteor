@@ -490,7 +490,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
   var catalog = require('./catalog.js');
 
   // Check that we are an authorized maintainer of this package.
-  if (!options['new']) {
+  if (!options['new'] && !options['maybe']) {
     var packRecord = catalog.official.getPackage(name);
     if (!packRecord) {
       process.stderr.write('There is no package named ' + name +
@@ -574,6 +574,15 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
   if (versionsFile &&  fs.existsSync(versionsFile)) {
     sources.push("versions.json");
   }
+
+  // Are there extra sources we want to bundle with the package source? If so,
+  // do so here.
+  if (options.extraSources) {
+    _.each(options.extraSources, function (s) {
+      sources.push(s);
+    });
+  }
+
   var sourceBundleResult = bundleSource(
     compileResult.unipackage, sources, packageSource.sourceRoot);
 
@@ -588,7 +597,20 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
       process.stderr.write(err.message + "\n");
       return 3;
     }
+  }
 
+  // Maybe create the package, or maybe don't. We are migrating from ATM and
+  // don't know if the package exists on troposphere and it costs us time to
+  // make us care.
+  if (options.maybe) {
+    process.stdout.write('Try to create package...\n');
+    try {
+      var packageId = conn.call('createPackage', {
+        name: packageSource.name
+      });
+    } catch (err) {
+      process.stderr.write(err.message + "\n");
+    }
   }
 
   if (options.existingVersion) {

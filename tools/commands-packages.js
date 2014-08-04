@@ -1790,3 +1790,126 @@ main.registerCommand({
 
   return 0;
 });
+
+
+///////////////////////////////////////////////////////////////////////////////
+// create
+///////////////////////////////////////////////////////////////////////////////
+
+main.registerCommand({
+  name: 'publish-dummy-record',
+  maxArgs: 1
+}, function (options) {
+
+  // We need to pass these in by the user, because we can't assume that we can
+  // just read the package.js record.
+  var packageName = path.basename(process.cwd());
+  var version = options.args[0];
+
+  // List all the files that we are going to bundle, move them to different
+  // prefixed files. (We don't want to have two files names package.js for
+  // example);
+  var oe = files.ls_recursive(".");
+  var entries = [];
+
+  _.each(oe, function (filename) {
+    // rename is awkward about dirs, especially hidden ones.
+    files.copyFile(filename, "old:" + filename);
+    entries.push("old:" + filename);
+  });
+
+  var transform = function (x) {
+    var xn = x.replace(/~package~/g, packageName);
+    xn = xn.replace(/~version~/g, version);
+    return xn;
+  };
+
+  // Our new directory should have the same name as the package because of how
+  // publish works.
+  files.cp_r(path.join(__dirname, 'skel-warning-package'), ".", {
+    transformContents: function (contents, f) {
+      if ((/(\.html|\.js|\.css)/).test(f))
+        return new Buffer(transform(contents.toString()));
+      else
+          return contents;
+      },
+      ignore: [/^local$/]
+  });
+
+  try {
+    var conn = packageClient.loggedInPackagesConnection();
+  } catch (err) {
+    packageClient.handlePackageServerConnectionError(err);
+    return 1;
+  }
+  if (! conn) {
+    process.stderr.write('No connection: Publish failed.\n');
+    return 1;
+  }
+
+  process.stdout.write('Building package...\n');
+
+  var packageSource, compileResult;
+  var messages = buildmessage.capture(
+    { title: "building the package" },
+    function () {
+      // This should never happen!
+      if (! utils.validPackageName(packageName)) {
+        buildmessage.error("Invalid package name:", packageName);
+      }
+
+      // Create and read the package source from our new dummy package!
+      packageSource = new PackageSource;
+      packageSource.initFromPackageDir(packageName, ".", {
+        requireVersion: true });
+
+      // This shouldn't really happen, ever, but if it does, let's catch it.
+      if (buildmessage.jobHasMessages())
+        return; // already have errors, so skip the build
+
+      // Let's build it. We can't build the original package, but we can build
+      // this one.
+      var directDeps =
+            compiler.determineBuildTimeDependencies(packageSource)
+              .directDependencies;
+      project._ensurePackagesExistOnDisk(directDeps);
+      compileResult = compiler.compile(packageSource, { officialBuild: true });
+    });
+
+    if (messages.hasMessages()) {
+       process.stderr.write(messages.formatMessages());
+    return 1;
+  }
+
+  // We have initialized everything, so perform the publish oepration.
+  var ec;
+  messages = buildmessage.capture({
+    title: "publishing the package"
+  }, function () {
+
+    // Don't forget to bundle the remnants of the current package directory
+    // along with the package source.
+
+    ec = packageClient.publishPackage(
+      packageSource, compileResult, conn, {
+        maybe: true,
+        extraSources: entries
+      });
+
+  });
+  if (messages.hasMessages()) {
+    process.stderr.write(messages.formatMessages());
+    return ec || 1;
+  }
+
+  // We are only publishing one package, so we should close the connection, and
+  // then exit with the previous error code.
+  conn.close();
+
+  catalog.official.refresh();
+
+  // We are not going to bother cleaning up this directory, because we are only
+  // intending to run this script on ATM where being able to see source
+  // afterwards is useful.
+  return ec;
+});
