@@ -541,16 +541,17 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
     function () {
       var testName = packageSource.testName;
       if (testName) {
-        var PackageSource = require('./package-source.js');
-        var compiler = require('./compiler.js');
+//        var PackageSource = require('./package-source.js');
+//        var compiler = require('./compiler.js');
 
-        var testSource = new PackageSource;
+// The migrate script is suboptimal at migrating tests, so let's not even bother.
+/*        var testSource = new PackageSource;
         testSource.initFromPackageDir(testName, packageSource.sourceRoot);
         if (buildmessage.jobHasMessages())
           return; // already have errors, so skip the build
 
         var testUnipackage = compiler.compile(testSource, { officialBuild: true });
-        testFiles = testUnipackage.sources;
+        testFiles = testUnipackage.sources; */
       }
     });
 
