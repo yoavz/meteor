@@ -1798,7 +1798,8 @@ main.registerCommand({
 
 main.registerCommand({
   name: 'publish-dummy-record',
-  maxArgs: 1
+  maxArgs: 1,
+  hidden: true
 }, function (options) {
 
   // We need to pass these in by the user, because we can't assume that we can
@@ -1819,14 +1820,14 @@ main.registerCommand({
   });
 
   var transform = function (x) {
-    var xn = x.replace(/~package~/g, packageName);
-    xn = xn.replace(/~version~/g, version);
+    var xn = x.replace(/~package~/g, JSON.stringify(packageName));
+    xn = xn.replace(/~version~/g, JSON.stringify(version));
     return xn;
   };
 
   // Our new directory should have the same name as the package because of how
   // publish works.
-  files.cp_r(path.join(__dirname, 'skel-warning-package'), ".", {
+  files.cp_r(path.join(__dirname, 'skel-warning-package'), process.cwd(), {
     transformContents: function (contents, f) {
       if ((/(\.html|\.js|\.css)/).test(f))
         return new Buffer(transform(contents.toString()));
@@ -1860,7 +1861,7 @@ main.registerCommand({
 
       // Create and read the package source from our new dummy package!
       packageSource = new PackageSource;
-      packageSource.initFromPackageDir(packageName, ".", {
+      packageSource.initFromPackageDir(packageName, process.cwd(), {
         requireVersion: true });
 
       // This shouldn't really happen, ever, but if it does, let's catch it.

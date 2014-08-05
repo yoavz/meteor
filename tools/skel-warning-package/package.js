@@ -1,6 +1,6 @@
 Package.describe({
-  summary: "INCOMPATIBLE WITH 0.9.0",
-  version: "~version~",
+  summary: "INCOMPATIBLE WITH METEOR 0.9.0 OR LATER",
+  version: ~version~,
 });
 
 Package.onUse(function(api) {

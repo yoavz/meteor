@@ -246,7 +246,7 @@ files.ls_recursive = function (p) {
   try {
     // the l in lstat is critical -- we want to remove symbolic
     // links, not what they point to
-    var stat = fs.statSync(p);
+    var stat = fs.lstatSync(p);
   } catch (e) {
     if (e.code == "ENOENT")
       return [];
