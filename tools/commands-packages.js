@@ -163,7 +163,7 @@ main.registerCommand({
         return; // already have errors, so skip the build
 
       var directDeps =
-            compiler.determineBuildTimeDependencies(packageSource).directDependencies;
+            compiler.determineBuildTimeDependencies(packageSource).packageDependencies;
       project._ensurePackagesExistOnDisk(directDeps);
 
       compileResult = compiler.compile(packageSource, { officialBuild: true });
