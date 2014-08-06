@@ -844,10 +844,11 @@ main.registerCommand({
                   + lastVersion.description || unknown + "\n");
     }
     var maintain = ". Maintained by " +
-          _.pluck(record.maintainers, 'username') + ".";
+          _.pluck(record.maintainers, 'username') + " ";
     if (lastVersion.git) {
       maintain = maintain + " at " + lastVersion.git;
     }
+   maintain = maintain + ".";
     if (record.homepage) {
       maintain = maintain + "\nYou can find more information at "
           + record.homepage;
@@ -1913,4 +1914,46 @@ main.registerCommand({
   // intending to run this script on ATM where being able to see source
   // afterwards is useful.
   return ec;
+});
+
+
+main.registerCommand({
+  name: 'admin change-git',
+  minArgs: 3,
+  maxArgs: 3
+}, function (options) {
+
+  // We want the most recent information.
+  var name = options.args[0];
+  var version = options.args[1];
+  var url = options.args[2];
+
+  // Now let's get down to business! Fetching the thing.
+  var record = catalog.official.getPackage(name);
+  if (!record) {
+      process.stderr.write('\n There is no package named ' + name + '\n');
+      return 1;
+  }
+
+  try {
+    var conn = packageClient.loggedInPackagesConnection();
+  } catch (err) {
+    packageClient.handlePackageServerConnectionError(err);
+    return 1;
+  }
+
+  try {
+      process.stdout.write(
+        "Changing git on  "
+          + name + " to " + url + "...\n");
+      conn.call('changeGit', {packageName: name, version: version}, url);
+      process.stdout.write("Done!\n");
+  } catch (err) {
+    process.stderr.write("\n" + err + "\n");
+  }
+
+  conn.close();
+  catalog.official.refresh();
+
+  return 0;
 });
