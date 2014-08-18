@@ -408,16 +408,24 @@ _.extend(PackageSource.prototype, {
   //   -immutable: This package source is immutable. Do not write anything,
   //    including version files. Instead, its only purpose is to be used as
   //    guideline for a repeatable build.
+  //   -name: override the name of this package with a different name.
   initFromPackageDir: function (name, dir, options) {
     var self = this;
     buildmessage.assertInCapture();
     var isPortable = true;
     options = options || {};
 
-    self.name = name;
-    self.sourceRoot = dir;
-    self.serveRoot = path.join(path.sep, 'packages', name);
+    // There is an awkwardness here, if you decide to name your directory
+    // local-test:foobar, and then we will be confused and never get your
+    // override in name in Package.Describe. So, that's probably sub-optimal.
+    //
+    // Note that this was a bug before too -- however, since there was a 100%
+    // link between directory name and package name, it made more sense that
+    // your directory name could impact things.
     self.isTest = isTestName(name);
+    self.name = name;
+
+    self.sourceRoot = dir;
 
     // If we are running from checkout we may be looking at a core package. If
     // we are, let's remember this for things like not recording version files.
@@ -427,12 +435,6 @@ _.extend(PackageSource.prototype, {
         self.isCore = true;
       }
     }
-
-    if (!utils.validPackageName(self.name)) {
-      buildmessage.error("Package name invalid: " + self.name);
-      return;
-    }
-
     if (! fs.existsSync(self.sourceRoot))
       throw new Error("putative package directory " + dir + " doesn't exist?");
 
@@ -471,11 +473,8 @@ _.extend(PackageSource.prototype, {
             self.version = value;
           } else if (key === "earliestCompatibleVersion") {
             self.earliestCompatibleVersion = value;
-          } else if (key === "name") {
-            // this key is special because we really don't want you to think that
-            // you are successfully overriding directory name right now. Someday, you
-            // may be though, so it is reserved.
-            buildmessage.error("reserved key " + key + " in package description.");
+          } else if (key === "name" && !self.isTest) {
+            self.name = value;
           }
           else {
           // Do nothing. We might want to add some keys later, and we should err on
@@ -507,6 +506,8 @@ _.extend(PackageSource.prototype, {
         // register the test. This is a medium-length hack until we have new
         // control files.
         if (!self.isTest) {
+          // We are relying on the fact that we have processed Package.Describe
+          // before we process this line.
           self.testName = genTestName(self.name);
           return;
         }
@@ -664,6 +665,12 @@ _.extend(PackageSource.prototype, {
       fileAndDepLoader = null;
       self.pluginInfo = {};
       npmDependencies = null;
+    }
+
+    // Check to see if our name is valid.
+    if (!utils.validPackageName(self.name)) {
+      buildmessage.error("Package name invalid: " + self.name);
+      return;
     }
 
     if (self.version === null && options.requireVersion) {
@@ -1107,6 +1114,8 @@ _.extend(PackageSource.prototype, {
       self.immutable = true;
     };
 
+    // Serve root of the package.
+    self.serveRoot = path.join(path.sep, 'packages', self.name);
   },
 
   // Initialize a package from an application directory (has .meteor/packages).
