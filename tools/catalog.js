@@ -294,15 +294,16 @@ var CompleteCatalog = function (options) {
   // Local directories to search for package source trees
   self.localPackageDirs = null;
 
-  // Packages specified by addLocalPackage: added explicitly through a
+  // Packagedirs specified by addLocalPackage: added explicitly through a
   // directory. We mainly use this to allow the user to run test-packages against a
   // package in a specific directory.
-  self.localPackages = {}; // package name to source directory
+  self.localPackages = [];
 
   // All packages found either by localPackageDirs or localPackages. There is a
   // hierarghy of packages, as detailed below and there can only be one local
-  // version of a package at a time.
-  self.effectiveLocalPackages = {}; // package name to source directory
+  // version of a package at a time. This refers to the package by the specific
+  // package directory that we need to process.
+  self.effectiveLocalPackages = [];
 
   // Constraint solver using this catalog.
   self.resolver = null;
@@ -583,7 +584,7 @@ _.extend(CompleteCatalog.prototype, {
   _recomputeEffectiveLocalPackages: function () {
     var self = this;
 
-    self.effectiveLocalPackages = {};
+    self.effectiveLocalPackages = [];
 
     // XXX If this is the forUniload catalog, we should only consider
     // uniload.ROOT_PACKAGES and their dependencies. Unfortunately, that takes a
@@ -609,17 +610,18 @@ _.extend(CompleteCatalog.prototype, {
           // Let earlier package directories override later package
           // directories.
 
-          // XXX XXX for now, get the package name from the
-          // directory. in a future refactor, should instead build the
-          // package right here and get the name from the (not yet
-          // added) 'name' attribute in package.js.
-          if (! _.has(self.effectiveLocalPackages, item))
-            self.effectiveLocalPackages[item] = packageDir;
+          // We don't know the name of the package, so we can't deal with
+          // duplicates yet. We are going to have to rely on the fact that we
+          // are putting these in in order, to be processed in order.
+          self.effectiveLocalPackages.push(packageDir);
         }
       });
     });
 
-    _.extend(self.effectiveLocalPackages, self.localPackages);
+    // XXX: There is totally a better way to extend arrays.
+    _.each(self.localPackages, function (x) {
+      self.effectiveLocalPackages.push(x);
+    });
   },
 
   getForgottenECVs: function (packageName) {
@@ -638,47 +640,38 @@ _.extend(CompleteCatalog.prototype, {
 
     var allOK = true;
 
-    // Remove all packages from the catalog that have the same name as
-    // a local package, along with all of their versions and builds.
-    var removedVersionIds = {};
-    _.each(self.effectiveLocalPackages, function (dir, packageName) {
-      if (!_.has(self.versions, packageName))
-        return;
-      self.forgottenECVs[packageName] = {};
-      _.each(self.versions[packageName], function (record) {
-        self.forgottenECVs[packageName][record.version] =
-          record.earliestCompatibleVersion;
-        removedVersionIds[record._id] = true;
-      });
-      delete self.versions[packageName];
-    });
-
-    self.builds = _.filter(self.builds, function (build) {
-      return ! _.has(removedVersionIds, build.versionId);
-    });
-
-    self.packages = _.filter(self.packages, function (pkg) {
-      return ! _.has(self.effectiveLocalPackages, pkg.name);
-    });
-
-    // Load the source code and create Package and Version
-    // entries from them. We have to do this before we can run the
-    // constraint solver.
-    var initVersionRecordFromSource =  function (packageDir, name) {
+    // Load the package source from a directory. We don't know the names of our
+    // local packages until we do this.
+    //
+    // THIS MUST BE RUN IN LOAD ORDER. Let's say that we have two directories for
+    // mongo-livedata. The first one processed by this function will be canonical.
+    // The second one will be ignored.
+    // XXX: EEP.
+    // (note: this is the behavior that we want for overriding things in checkout.
+    //  It is not clear that you get good UX if you have two packages with the same
+    //  name in your app. We don't check that.)
+    var initSourceFromDir =  function (packageDir, defName) {
       var packageSource = new PackageSource(self);
       var broken = false;
       buildmessage.enterJob({
-        title: "reading package `" + name + "`",
+        title: "reading package from `" + packageDir + "`",
         rootPath: packageDir
       }, function () {
         // All packages in the catalog must have versions. Though, for local
         // packages without version, we can be kind and set it to
         // 0.0.0. Anything requiring any version above that will not be
         // compatible, which is fine.
-        packageSource.initFromPackageDir(name, packageDir, {
+        var opts = {
           requireVersion: true,
           defaultVersion: "0.0.0"
-        });
+        };
+        // If we specified a name, then we know what we want to get and should
+        // pass that into the options. Otherwise, we will use the 'name'
+        // attribute from package-source.js.
+        if (defName) {
+          opts["name"] = defName;
+        }
+        packageSource.initFromPackageDir(packageDir, opts);
         if (buildmessage.jobHasMessages()) {
           broken = true;
           allOK = false;
@@ -698,8 +691,30 @@ _.extend(CompleteCatalog.prototype, {
       if (broken)
         return;
 
-      self.packageSources[name] = packageSource;
+      // Now that we have initialized the package from package.js, we know its
+      // name.
+      var name = packageSource.name;
 
+      // We should only have one package dir for each name; in this case, we are
+      // going to take the first one we get (since we preserved the order in
+      // which we loaded local package dirs when running this function.)
+      if (!self.packageSources[name]) {
+        self.packageSources[name] = packageSource;
+
+        // If this is NOT a test package AND it has tests (tests will be marked
+        // as test packages by package source, so we will not recurse
+        // infinitely), then process that too.
+        if (!packageSource.isTest && packageSource.testName) {
+          initSourceFromDir(packageSource.sourceRoot, packageSource.testName);
+        }
+      }
+    };
+
+    // Given a package-source, create its catalog record.
+    var initCatalogRecordsFromSource = function (packageSource) {
+      var name = packageSource.name;
+
+      // Create the package record.
       self.packages.push({
         name: name,
         maintainers: null,
@@ -769,20 +784,37 @@ _.extend(CompleteCatalog.prototype, {
         isTest: packageSource.isTest,
         containsPlugins: packageSource.containsPlugins()
       };
-
-      // Test packages are not allowed to have tests. Any time we recurse into
-      // this function, it will be with test marked as true, so recursion
-      // will terminate quickly.
-      if (!packageSource.isTest && packageSource.testName) {
-        self.effectiveLocalPackages[packageSource.testName] = packageSource.sourceRoot;
-        initVersionRecordFromSource(packageSource.sourceRoot, packageSource.testName);
-      }
     };
 
-    // Add the records for packages and their tests. With underscore, each only
-    // runs on the original members of the collection, so it is safe to modify
-    // effectiveLocalPackages in initPackageSource (to add test packages).
-    _.each(self.effectiveLocalPackages, initVersionRecordFromSource);
+    // Load the package sources for packages and their tests into packageSources.
+    _.each(self.effectiveLocalPackages, initSourceFromDir);
+
+    // Remove all packages from the catalog that have the same name as
+    // a local package, along with all of their versions and builds.
+    var removedVersionIds = {};
+    _.each(self.packageSources, function (source, name) {
+      if (!_.has(self.versions, name))
+        return;
+      self.forgottenECVs[name] = {};
+      _.each(self.versions[name], function (record) {
+        self.forgottenECVs[name][record.version] =
+          record.earliestCompatibleVersion;
+        removedVersionIds[record._id] = true;
+      });
+      delete self.versions[name];
+    });
+
+    self.builds = _.filter(self.builds, function (build) {
+      return ! _.has(removedVersionIds, build.versionId);
+    });
+
+    self.packages = _.filter(self.packages, function (pkg) {
+      return ! _.has(self.packageSources, pkg.name);
+    });
+
+    // Go through the packageSources and create a catalog record for each. This
+    // is where we are going to check that some packages are duplicate.
+    _.each(self.packageSources, initCatalogRecordsFromSource);
 
     return allOK;
   },
@@ -962,11 +994,7 @@ _.extend(CompleteCatalog.prototype, {
     self._requireInitialized();
 
     var resolvedPath = path.resolve(directory);
-    if (_.has(self.localPackages, name) &&
-        self.localPackages[name] !== resolvedPath) {
-      throw new Error("Duplicate local package '" + name + "'");
-    }
-    self.localPackages[name] = resolvedPath;
+    self.localPackages.push(resolvedPath);
 
     // If we were making lots of calls to addLocalPackage, we would
     // want to coalesce the calls to refresh somehow, but I don't

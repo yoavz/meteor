@@ -409,21 +409,21 @@ _.extend(PackageSource.prototype, {
   //    including version files. Instead, its only purpose is to be used as
   //    guideline for a repeatable build.
   //   -name: override the name of this package with a different name.
-  initFromPackageDir: function (name, dir, options) {
+  initFromPackageDir: function (dir, options) {
     var self = this;
     buildmessage.assertInCapture();
     var isPortable = true;
     options = options || {};
 
-    // There is an awkwardness here, if you decide to name your directory
-    // local-test:foobar, and then we will be confused and never get your
-    // override in name in Package.Describe. So, that's probably sub-optimal.
-    //
-    // Note that this was a bug before too -- however, since there was a 100%
-    // link between directory name and package name, it made more sense that
-    // your directory name could impact things.
-    self.isTest = isTestName(name);
-    self.name = name;
+    // If we know what package we are initializing, we pass in a
+    // name. Otherwise, we are intializing the base package specified by 'name:'
+    // field in Package.Describe. In that case, it is clearly not a test
+    // package. (Though we could be initializing a specific package without it
+    // being a test, for a variety of reasons).
+    if (options.name) {
+      self.isTest = isTestName(options.name);
+      self.name = options.name;
+    }
 
     self.sourceRoot = dir;
 
@@ -474,7 +474,14 @@ _.extend(PackageSource.prototype, {
           } else if (key === "earliestCompatibleVersion") {
             self.earliestCompatibleVersion = value;
           } else if (key === "name" && !self.isTest) {
-            self.name = value;
+            if (!self.name) {
+              self.name = value;
+            } else if (self.name !== value) {
+              // Woah, so we requested a non-test package by name, and it is not
+              // the name that we find inside. That's super weird.
+              buildmessage.error(
+                "trying to initialize a nonexistent base package " + value);
+            }
           }
           else {
           // Do nothing. We might want to add some keys later, and we should err on
@@ -665,6 +672,16 @@ _.extend(PackageSource.prototype, {
       fileAndDepLoader = null;
       self.pluginInfo = {};
       npmDependencies = null;
+    }
+
+    // In the past, we did not require a Package.Describe.name field. So, it is
+    // possible that we are initializing a package that doesn't use it and
+    // expects us to be implicit about it.
+    if (!self.name) {
+      // For backwards-compatibility, we will take the package name from the
+      // directory of the package. That was what we used to do: in fact, we used
+      // to only do that.
+      self.name = path.basename(dir);
     }
 
     // Check to see if our name is valid.
