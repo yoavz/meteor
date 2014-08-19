@@ -622,6 +622,7 @@ _.extend(CompleteCatalog.prototype, {
     _.each(self.localPackages, function (x) {
       self.effectiveLocalPackages.push(x);
     });
+    self.effectiveLocalPackages.reverse();
   },
 
   getForgottenECVs: function (packageName) {
@@ -707,7 +708,9 @@ _.extend(CompleteCatalog.prototype, {
         if (!packageSource.isTest && packageSource.testName) {
           initSourceFromDir(packageSource.sourceRoot, packageSource.testName);
         }
-      }
+      }/* else {
+        console.log("REPEAT:", name, packageSource.sourceRoot);
+      }*/
     };
 
     // Given a package-source, create its catalog record.
@@ -990,7 +993,7 @@ _.extend(CompleteCatalog.prototype, {
   // be overridden (it will be as if that package doesn't exist on the
   // package server at all). And for now, it's an error to call this
   // function twice with the same `name`.
-  addLocalPackage: function (name, directory) {
+  addLocalPackage: function (directory) {
     var self = this;
     buildmessage.assertInCapture();
     self._requireInitialized();
@@ -1069,7 +1072,7 @@ _.extend(CompleteCatalog.prototype, {
         }
       });
       if (bad)
-        return;
+        return 0;
     }
 
     // Go through the local packages and remove all of their build

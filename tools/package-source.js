@@ -682,6 +682,8 @@ _.extend(PackageSource.prototype, {
       // directory of the package. That was what we used to do: in fact, we used
       // to only do that.
       self.name = path.basename(dir);
+      if (self.testName)
+        self.testName = genTestName(self.name);
     }
 
     // Check to see if our name is valid.
