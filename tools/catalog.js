@@ -787,7 +787,9 @@ _.extend(CompleteCatalog.prototype, {
     };
 
     // Load the package sources for packages and their tests into packageSources.
-    _.each(self.effectiveLocalPackages, initSourceFromDir);
+    _.each(self.effectiveLocalPackages, function (x) {
+      initSourceFromDir(x);
+     });
 
     // Remove all packages from the catalog that have the same name as
     // a local package, along with all of their versions and builds.
@@ -834,7 +836,7 @@ _.extend(CompleteCatalog.prototype, {
     var self = this;
     buildmessage.assertInCapture();
 
-    var sourcePath = self.effectiveLocalPackages[name];
+    var sourcePath = self.packageSources[name].sourceRoot;
     var buildDir = path.join(sourcePath, '.build.' + name);
     if (fs.existsSync(buildDir)) {
       var unip = new unipackage.Unipackage;
@@ -934,7 +936,7 @@ _.extend(CompleteCatalog.prototype, {
     });
 
     // Now build this package if it needs building
-    var sourcePath = self.effectiveLocalPackages[name];
+    var sourcePath = self.packageSources[name].sourceRoot;
     unip = self._maybeGetUpToDateBuild(name, constraintSolverOpts);
 
     if (! unip) {
@@ -1011,7 +1013,7 @@ _.extend(CompleteCatalog.prototype, {
     var self = this;
     self._requireInitialized();
 
-    return _.has(self.effectiveLocalPackages, name);
+    return _.has(self.packageSources, name);
   },
 
   // Register local package directories with a watchSet. We want to know if a
@@ -1058,7 +1060,7 @@ _.extend(CompleteCatalog.prototype, {
     if (namedPackages) {
       var bad = false;
       _.each(namedPackages, function (namedPackage) {
-        if (!_.has(self.effectiveLocalPackages, namedPackage)) {
+        if (!_.has(self.packageSources, namedPackage)) {
           buildmessage.enterJob(
             { title: "rebuilding " + namedPackage }, function () {
               buildmessage.error("unknown package");
@@ -1074,7 +1076,8 @@ _.extend(CompleteCatalog.prototype, {
     // directories. Now, no package will be up to date and all of them will have
     // to be rebuilt.
     var count = 0;
-    _.each(self.effectiveLocalPackages, function (loadPath, name) {
+    _.each(self.packageSources, function (packageSource, name) {
+      var loadPath = packageSource.sourceRoot;
       if (namedPackages && !_.contains(namedPackages, name))
         return;
       var buildDir = path.join(loadPath, '.build.' + name);
@@ -1084,7 +1087,8 @@ _.extend(CompleteCatalog.prototype, {
     // Now, go (again) through the local packages and ask the packageCache to
     // load each one of them. Since the packageCache will not find any old
     // builds (and have no cache), it will be forced to recompile them.
-    _.each(self.effectiveLocalPackages, function (loadPath, name) {
+    _.each(self.packageSources, function (packageSource, name) {
+      var loadPath = packageSource.sourceRoot;
       if (namedPackages && !_.contains(namedPackages, name))
         return;
       self.packageCache.loadPackageAtPath(name, loadPath);
@@ -1097,7 +1101,7 @@ _.extend(CompleteCatalog.prototype, {
   getLocalPackageNames: function () {
     var self = this;
     self._requireInitialized();
-    return _.keys(self.effectiveLocalPackages);
+    return _.keys(self.packageSources);
   },
 
   // Given a name and a version of a package, return a path on disk
@@ -1120,13 +1124,13 @@ _.extend(CompleteCatalog.prototype, {
     constraintSolverOpts =  constraintSolverOpts || {};
 
     // Check local packages first.
-    if (_.has(self.effectiveLocalPackages, name)) {
+    if (_.has(self.packageSources, name)) {
 
       // If we don't have a build of this package, we need to rebuild it.
       self._build(name, {}, constraintSolverOpts);
 
       // Return the path.
-      return self.effectiveLocalPackages[name];
+      return self.packageSources[name].sourceRoot;
     }
 
     if (! version) {
