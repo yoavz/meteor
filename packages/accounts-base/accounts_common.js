@@ -1,5 +1,6 @@
 /**
  * @namespace Accounts
+ * A namespace for functions that work with accounts type stuff.
  */
 Accounts = {};
 

@@ -2,8 +2,14 @@ Accounts.oauth = {};
 
 var services = {};
 
-// Helper for registering OAuth based accounts packages.
-// On the server, adds an index to the user collection.
+
+
+/**
+ * Helper for registering OAuth based accounts packages.
+On the server, adds an index to the user collection.
+* @param  {String} name
+* @deprecated in 1.0
+ */
 Accounts.oauth.registerService = function (name) {
   if (_.has(services, name))
     throw new Error("Duplicate service: " + name);
