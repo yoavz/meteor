@@ -43,14 +43,26 @@ var onLoginFailureHook = new Hook({
   debugPrintExceptions: "onLoginFailure callback"
 });
 
+/**
+ * XXX I don't even know what this does
+ * @param  {function} func
+ */
 Accounts.validateLoginAttempt = function (func) {
   return validateLoginHook.register(func);
 };
 
+/**
+ * Add a callback for login success
+ * @param  {function} func Callback to add
+ */
 Accounts.onLogin = function (func) {
   return onLoginHook.register(func);
 };
 
+/**
+ * Add a callback for login failure
+ * @param  {function} func Callback to add
+ */
 Accounts.onLoginFailure = function (func) {
   return onLoginFailureHook.register(func);
 };
@@ -322,19 +334,20 @@ Accounts._reportLoginFailure = function (methodInvocation, methodName, methodArg
 // list of all registered handlers.
 var loginHandlers = [];
 
-// The main entry point for auth packages to hook in to login.
-//
-// A login handler is a login method which can return `undefined` to
-// indicate that the login request is not handled by this handler.
-//
-// @param name {String} Optional.  The service name, used by default
-// if a specific service name isn't returned in the result.
-//
-// @param handler {Function} A function that receives an options object
-// (as passed as an argument to the `login` method) and returns one of:
-// - `undefined`, meaning don't handle;
-// - a login method result object
+/**
+The main entry point for auth packages to hook in to login.
 
+A login handler is a login method which can return `undefined` to
+indicate that the login request is not handled by this handler.
+
+@param [name] {String} The service name, used by default
+if a specific service name isn't returned in the result.
+
+@param handler {Function} A function that receives an options object
+(as passed as an argument to the `login` method) and returns one of:
+- `undefined`, meaning don't handle;
+- a login method result object
+*/
 Accounts.registerLoginHandler = function(name, handler) {
   if (! handler) {
     handler = name;
@@ -381,14 +394,18 @@ var runLoginHandlers = function (methodInvocation, options) {
   };
 };
 
-// Deletes the given loginToken from the database.
-//
-// For new-style hashed token, this will cause all connections
-// associated with the token to be closed.
-//
-// Any connections associated with old-style unhashed tokens will be
-// in the process of becoming associated with hashed tokens and then
-// they'll get closed.
+/**
+Deletes the given loginToken from the database.
+
+For new-style hashed token, this will cause all connections
+associated with the token to be closed.
+
+Any connections associated with old-style unhashed tokens will be
+in the process of becoming associated with hashed tokens and then
+they'll get closed.
+@param userId {String} The user ID associated with the token
+@param loginToken {String} The token to delete
+*/
 Accounts.destroyToken = function (userId, loginToken) {
   Meteor.users.update(userId, {
     $pull: {
@@ -962,6 +979,11 @@ Meteor.startup(function () {
 ///
 
 var onCreateUserHook = null;
+
+/**
+ * Add a callback to user creation
+ * @param  {function} func
+ */
 Accounts.onCreateUser = function (func) {
   if (onCreateUserHook)
     throw new Error("Can only call onCreateUser once");
@@ -978,6 +1000,12 @@ var defaultCreateUserHook = function (options, user) {
 };
 
 // Called by accounts-password
+/**
+ * Create a user document
+ * @param  {Object} options XXX no idea what
+ * @param  {Object} user A user document to insert
+ * @return {String} The userId of the inserted user
+ */
 Accounts.insertUserDoc = function (options, user) {
   // - clone user document, to protect from modification
   // - add createdAt timestamp
@@ -1036,6 +1064,11 @@ Accounts.insertUserDoc = function (options, user) {
 };
 
 var validateNewUserHooks = [];
+/**
+ * Validate a new user
+ * @param  {function} func Validation function to call, should return true if
+ * the user can be created
+ */
 Accounts.validateNewUser = function (func) {
   validateNewUserHooks.push(func);
 };
@@ -1190,13 +1223,15 @@ var autopublishFields = {
   otherUsers: ['profile', 'username']
 };
 
-// Add to the list of fields or subfields to be automatically
-// published if autopublish is on. Must be called from top-level
-// code (ie, before Meteor.startup hooks run).
-//
-// @param opts {Object} with:
-//   - forLoggedInUser {Array} Array of fields published to the logged-in user
-//   - forOtherUsers {Array} Array of fields published to users that aren't logged in
+/**
+Add to the list of fields or subfields to be automatically
+published if autopublish is on. Must be called from top-level
+code (ie, before Meteor.startup hooks run).
+
+@param opts {Object}
+@param opts.forLoggedInUser {Array} Array of fields published to the logged-in user
+@param opts.forOtherUsers {Array} Array of fields published to users that aren't logged in
+*/
 Accounts.addAutopublishFields = function(opts) {
   autopublishFields.loggedInUser.push.apply(
     autopublishFields.loggedInUser, opts.forLoggedInUser);

@@ -1,3 +1,6 @@
+/**
+ * @namespace Accounts
+ */
 Accounts = {};
 
 // Currently this is read directly by packages like accounts-password
@@ -16,28 +19,29 @@ EXPIRE_TOKENS_INTERVAL_MS = 600 * 1000; // 10 minutes
 // called
 CONNECTION_CLOSE_DELAY_MS = 10 * 1000;
 
-// Set up config for the accounts system. Call this on both the client
-// and the server.
-//
 // XXX we should add some enforcement that this is called on both the
 // client and the server. Otherwise, a user can
 // 'forbidClientAccountCreation' only on the client and while it looks
 // like their app is secure, the server will still accept createUser
 // calls. https://github.com/meteor/meteor/issues/828
-//
-// @param options {Object} an object with fields:
-// - sendVerificationEmail {Boolean}
-//     Send email address verification emails to new users created from
-//     client signups.
-// - forbidClientAccountCreation {Boolean}
-//     Do not allow clients to create accounts directly.
-// - restrictCreationByEmailDomain {Function or String}
-//     Require created users to have an email matching the function or
-//     having the string as domain.
-// - loginExpirationInDays {Number}
-//     Number of days since login until a user is logged out (login token
-//     expires).
-//
+
+/**
+Set up config for the accounts system. Call this on both the client
+and the server.
+
+@param options {Object}
+@param options.sendVerificationEmail {Boolean}
+    Send email address verification emails to new users created from
+    client signups.
+@param options.forbidClientAccountCreation {Boolean}
+    Do not allow clients to create accounts directly.
+@param options.restrictCreationByEmailDomain {(Function|String)}
+    Require created users to have an email matching the function or
+    having the string as domain.
+@param options.loginExpirationInDays {Number}
+    Number of days since login until a user is logged out (login token
+    expires).
+ */
 Accounts.config = function(options) {
   // We don't want users to accidentally only call Accounts.config on the
   // client, where some of the options will have partial effects (eg removing

@@ -107,14 +107,14 @@ Accounts.createUser = function (options, callback) {
 };
 
 
-
-// Change password. Must be logged in.
-//
-// @param oldPassword {String|null} By default servers no longer allow
-//   changing password without the old password, but they could so we
-//   support passing no password to the server and letting it decide.
-// @param newPassword {String}
-// @param callback {Function(error|undefined)}
+/**
+ * Change password. Must be logged in.
+ * @param  {String}  [oldPassword] By default servers no longer allow
+  changing password without the old password, but they could so we
+  support passing no password to the server and letting it decide.
+ * @param  {String}   newPassword
+ * @param  {Function} callback
+ */
 Accounts.changePassword = function (oldPassword, newPassword, callback) {
   if (!Meteor.user()) {
     callback && callback(new Error("Must be logged in to change password."));
