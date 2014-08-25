@@ -1,3 +1,9 @@
+/**
+ * Methods dealing with oauth
+ * 
+ * @namespace  Accounts.oauth
+ * @package accounts-oauth
+ */
 Accounts.oauth = {};
 
 var services = {};

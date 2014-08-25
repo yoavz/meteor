@@ -418,6 +418,44 @@
   }
 
   /**
+   * Get a tag dictionary from the tags field on the object, for custom fields
+   * like package
+   * @param  {JSDoc object} data The thing you get in the TaffyDB from JSDoc
+   * @return {Object}      Keys are the parameter names, values are the values.
+   */
+  var getTagDict = function (data) {
+    var tagDict = {};
+
+    if (data.tags) {
+      _.each(data.tags, function (tag) {
+        tagDict[tag.title] = tag.value;
+      });
+    }
+
+    return tagDict;
+  };
+
+  var addToTree = function (root, location, data) {
+    var path = location.split(".");
+
+    _.each(path, function (segment) {
+      if (! (segment in root)) {
+        root[segment] = {};
+      }
+
+      root = root[segment];
+    });
+
+    for (var prop in data) {
+      if (data.hasOwnProperty(prop)) {
+        root[prop] = data[prop];
+      }
+    }
+
+    _.extend(root, getTagDict(data));
+  };
+
+  /**
     @param {TAFFY} taffyData See <http://taffydb.com/>.
     @param {object} opts
     @param {Tutorial} tutorials
@@ -428,14 +466,25 @@
     var namespaces = helper.find(data,
       {kind: "namespace"});
 
-    var docTree = {
-      namespaces: {}
-    };
+    var docTree = {};
 
+    // prepare all of the namespaces
     _.each(namespaces, function (namespace) {
-      console.log(namespace.longname);
-      console.log(namespace.description);
-
+      addToTree(docTree, namespace.longname, namespace);
     });
+
+    var functions = helper.find(data, {kind: "function"});
+
+    // insert all of the function data into the namespaces
+    _.each(functions, function (func) {
+      addToTree(docTree, func.longname, func);
+    });
+
+    var jsonString = JSON.stringify(docTree, null, 2);
+    var jsString = "DocsData = " + jsonString;
+
+    var docsDataFilename = "docs/client/data.js";
+
+    fs.writeFileSync(docsDataFilename, jsString);
   };
 })();

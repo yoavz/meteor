@@ -1,8 +1,4 @@
 /**
- * @namespace  Accounts.oauth
- */
-
-/**
  * Send an OAuth login method to the server. If the user authorized
 access in the popup this should log the user in, otherwise
 nothing should happen.
