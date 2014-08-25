@@ -481,7 +481,7 @@
     });
 
     var jsonString = JSON.stringify(docTree, null, 2);
-    var jsString = "DocsData = " + jsonString;
+    var jsString = "DocsData = " + jsonString + ";";
 
     var docsDataFilename = "docs/client/data.js";
 
