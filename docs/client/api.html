@@ -1748,7 +1748,7 @@ Example:
       passwordSignupFields: 'USERNAME_AND_OPTIONAL_EMAIL'
     });
 
-{{> api_box accounts_validateNewUser}}
+{{> autoApiBox "Accounts.validateNewUser"}}
 
 This can be called multiple times. If any of the functions return `false` or
 throw an error, the new user creation is aborted. To set a specific error
@@ -3154,59 +3154,4 @@ code can read `data.txt` by running:
     var data = Assets.getText('nested/data.txt');
 {{/markdown}}
 
-</template>
-
-
-
-
-
-
-<template name="api_box">
-<div class="api {{bare}}">
-
-<h3 id="{{id}}">
-  <a class="name selflink" href="#{{id}}">{{{name}}}</a>
-{{#if locus}}
-  <span class="locus">{{locus}}</span>
-{{/if}}
-</h3>
-
-<div class="desc">
-{{#each descr}}{{#markdown}}{{{this}}}{{/markdown}}{{/each}}
-</div>
-
-{{#if args}}
-<h4>Arguments</h4>
-{{> api_box_args args}}
-{{/if}}
-
-{{#if options}}
-<h4>Options</h4>
-{{> api_box_args options}}
-{{/if}}
-
-{{#if UI.contentBlock}}
-{{#markdown}}{{> UI.contentBlock}}{{/markdown}}
-{{/if}}
-
-</div>
-
-</template>
-
-
-
-<template name="api_box_args">
-<dl class="args">
-{{#each this}}
-<dt><span class="name">{{{name}}}</span>
-  <span class="type">
-    {{#if type_link}}
-      <a href="#{{type_link}}">{{{type}}}</a>
-    {{else}}
-      {{{type}}}
-    {{/if}}
-  </span></dt>
-<dd>{{#markdown}}{{{descr}}}{{/markdown}}</dd>
-{{/each}}
-</dl>
 </template>

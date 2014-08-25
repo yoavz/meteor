@@ -1065,9 +1065,9 @@ Accounts.insertUserDoc = function (options, user) {
 
 var validateNewUserHooks = [];
 /**
- * Validate a new user
- * @param  {function} func Validation function to call, should return true if
- * the user can be created
+ * Set restrictions on new user creation.
+ * @param  {Function} func Called whenever a new user is created. Takes the new
+ * user object, and returns true to allow the creation or false to abort.
  */
 Accounts.validateNewUser = function (func) {
   validateNewUserHooks.push(func);
