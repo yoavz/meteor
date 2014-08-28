@@ -30,10 +30,10 @@ if (Meteor.isClient) {
   var onDDPVersionNegotiationFailure = function (description) {
     Meteor._debug(description);
     if (Package.reload) {
-      var migrationData = Package.reload.Reload._migrationData('livedata') || {};
+      var migrationData = Package.reload.Reload._migrationData('ddp') || {};
       var failures = migrationData.DDPVersionNegotiationFailures || 0;
       ++failures;
-      Package.reload.Reload._onMigrate('livedata', function () {
+      Package.reload.Reload._onMigrate('ddp', function () {
         return [true, {DDPVersionNegotiationFailures: failures}];
       });
       retry.retryLater(failures, function () {

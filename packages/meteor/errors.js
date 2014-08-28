@@ -31,10 +31,10 @@ Meteor.makeErrorType = function (name, constructor) {
   return errorClass;
 };
 
-// This should probably be in the livedata package, but we don't want
-// to require you to use the livedata package to get it. Eventually we
+// This should probably be in the ddp package, but we don't want
+// to require you to use the ddp package to get it. Eventually we
 // should probably rename it to DDP.Error and put it back in the
-// 'livedata' package (which we should rename to 'ddp' also.)
+// 'ddp' package.
 //
 // Note: The DDP server assumes that Meteor.Error EJSON-serializes as an object
 // containing 'error' and optionally 'reason' and 'details'.

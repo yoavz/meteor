@@ -21,7 +21,7 @@ var uniload = require('./uniload.js');
 // livedata: DDP client interface to make a connection to the package server.
 var getLoadedPackages = function () {
   return uniload.load({
-    packages: [ 'meteor', 'livedata']
+    packages: [ 'meteor', 'ddp']
   });
 };
 
