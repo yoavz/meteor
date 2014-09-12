@@ -693,11 +693,12 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
       dependencies: packageDeps
     };
     try {
-      if (!conn.connection) {
-        console.log("Your connection appears to have timed out?");
+      console.log(conn.connection);
+//      if (!conn.connection) {
+  //      console.log("Your connection appears to have timed out?");
         conn.close();
         conn = exports.loggedInPackagesConnection();
-      }
+    //  }
       var uploadInfo = conn.call('createPackageVersion', uploadRec);
     } catch (err) {
       process.stderr.write("ERROR " + err.message + "\n");
