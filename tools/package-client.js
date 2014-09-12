@@ -693,7 +693,8 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
       dependencies: packageDeps
     };
     try {
-      conn = conn || exports.loggedInPackagesConection();
+//      conn = conn || exports.loggedInPackagesConection();
+      var newConn =  exports.loggedInPackagesConection();
       var uploadInfo = conn.call('createPackageVersion', uploadRec);
     } catch (err) {
       process.stderr.write("ERROR " + err.message + "\n");
