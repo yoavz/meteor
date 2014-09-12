@@ -196,7 +196,7 @@ main.registerCommand({
   // Refresh the catalog, caching the remote package data on the server. We can
   // optimize the workflow by using this data to weed out obviously incorrect
   // submissions before they ever hit the wire.
-  refreshOfficialCatalogOrDie();
+//  refreshOfficialCatalogOrDie();
 
   try {
     var conn = packageClient.loggedInPackagesConnection();
