@@ -694,7 +694,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
     };
     try {
 //      conn = conn || exports.loggedInPackagesConection();
-      var newConn =  exports.loggedInPackagesConection();
+      var newConn =  exports.loggedInPackagesConnection();
       var uploadInfo = conn.call('createPackageVersion', uploadRec);
     } catch (err) {
       process.stderr.write("ERROR " + err.message + "\n");
