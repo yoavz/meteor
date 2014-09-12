@@ -460,6 +460,7 @@ var createAndPublishBuiltPackage = function (conn, unipackage) {
     return;
 
   process.stdout.write('Creating package build...\n');
+  conn = conn || exports.loggedInPackagesConection();
   var uploadInfo = conn.call('createPackageBuild', {
     packageName: unipackage.name,
     version: unipackage.version,
@@ -471,6 +472,7 @@ var createAndPublishBuiltPackage = function (conn, unipackage) {
                 bundleResult.buildTarball);
 
   process.stdout.write('Publishing package build...\n');
+  conn = conn || exports.loggedInPackagesConection();
   conn.call('publishPackageBuild',
             uploadInfo.uploadToken,
             bundleResult.tarballHash,
@@ -691,6 +693,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
       dependencies: packageDeps
     };
     try {
+      conn = conn || exports.loggedInPackagesConection();
       var uploadInfo = conn.call('createPackageVersion', uploadRec);
     } catch (err) {
       process.stderr.write("ERROR " + err.message + "\n");
@@ -706,6 +709,7 @@ exports.publishPackage = function (packageSource, compileResult, conn, options) 
 
     process.stdout.write('Publishing package version...\n');
     try {
+      conn = conn || exports.loggedInPackagesConection();
       conn.call('publishPackageVersion',
                 uploadInfo.uploadToken,
                 { tarballHash: sourceBundleResult.tarballHash,
