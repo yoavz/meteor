@@ -216,6 +216,7 @@ var convertIsopackFormat = function (data, versionFrom, versionTo) {
     delete convertedData.unibuilds;
     return convertedData;
   } else if (versionFrom === "isopack-1" && versionTo === "unipackage-pre2") {
+    convertedData.format = "unipackage-pre2";
     convertedData.unibuilds = convertedData.builds;
     delete convertedData.builds;
     return convertedData;
