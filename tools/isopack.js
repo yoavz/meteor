@@ -213,6 +213,7 @@ var convertIsopackFormat = function (data, versionFrom, versionTo) {
   // XXX COMPAT WITH 0.9.3
   if (versionFrom === "unipackage-pre2" && versionTo === "isopack-1") {
     convertedData.builds = convertedData.unibuilds;
+    delete convertedData.format;
     delete convertedData.unibuilds;
     return convertedData;
   } else if (versionFrom === "isopack-1" && versionTo === "unipackage-pre2") {
