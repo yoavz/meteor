@@ -1044,9 +1044,9 @@ _.extend(ClientTarget.prototype, {
 
     self.css[0].setSourceMap(JSON.stringify(newMap));
     self.css[0].setUrlToHash(".css");
-  },
+  }),
   // Minify the CSS in this target
-  minifyCss: function (minifiers) {
+  minifyCss: Profile("minify css", function (minifiers) {
     var self = this;
     var minifiedCss = '';
 
@@ -1065,7 +1065,7 @@ _.extend(ClientTarget.prototype, {
       self.css = [new File({ info: 'minified css', data: new Buffer(minifiedCss, 'utf8') })];
       self.css[0].setUrlToHash(".css", "?meteor_css_resource=true");
     }
-  },
+  }),
 
   // Output the finished target to disk
   //
@@ -2283,9 +2283,9 @@ exports.buildJsImage = Profile("build js image", function (options) {
 // Load a JsImage from disk (that was previously written by calling
 // write() on a JsImage). `controlFilePath` is the path to the control
 // file (eg, program.json).
-exports.readJsImage = function (controlFilePath) {
+exports.readJsImage = Profile("read js image", function (controlFilePath) {
   return JsImage.readFromDisk(controlFilePath);
-};
+});
 
 // Given an array of isopack names, invokes the callback with each
 // corresponding Isopack object, plus all of their transitive dependencies,
