@@ -1970,7 +1970,10 @@ exports._bundle = function (options) {
       // Create a Isopack object that represents the app
       var packageSource = new PackageSource(whichCatalog);
       packageSource.initFromAppDir(appDir, exports.ignoreFiles);
-      var app = compiler.compile(packageSource).isopack;
+      var app;
+      Profile.time("compile from app", function () {
+        app = compiler.compile(packageSource).isopack;
+      });
 
       var clientTargets = [];
       // Client

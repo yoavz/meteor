@@ -12,6 +12,7 @@ var catalog = require('./catalog.js');
 var utils = require('./utils.js');
 var meteorNpm = require('./meteor-npm.js');
 var release = require('./release.js');
+var Profile = require('./profile.js');
 
 var compiler = exports;
 
@@ -62,7 +63,7 @@ compiler.BUILT_BY = 'meteor/14';
 // of an "os" arch.  Otherwise you won't be able to find any unibuilds for
 // packages that only have OS-specific os arches!
 compiler.eachUsedUnibuild = function (
-    dependencies, arch, packageLoader, options, callback) {
+  dependencies, arch, packageLoader, options, callback) {
   if (typeof options === "function") {
     callback = options;
     options = {};
@@ -131,8 +132,8 @@ compiler.eachUsedUnibuild = function (
 // 'meteor update' for package build-time dependencies?
 //
 // XXX deal with _makeBuildTimePackageLoader callsites
-var determineBuildTimeDependencies = function (packageSource,
-                                               constraintSolverOpts) {
+var determineBuildTimeDependencies = Profile(
+  "determine build time deps", function (packageSource, constraintSolverOpts) {
   var ret = {};
   constraintSolverOpts = constraintSolverOpts || {};
   buildmessage.assertInCapture();
@@ -276,7 +277,7 @@ var determineBuildTimeDependencies = function (packageSource,
   }
 
   return ret;
-};
+});
 
 compiler.determineBuildTimeDependencies = determineBuildTimeDependencies;
 
@@ -290,8 +291,8 @@ compiler.determineBuildTimeDependencies = determineBuildTimeDependencies;
 // not be able to) load transitive dependencies of those packages.
 //
 // Returns a list of source files that were used in the compilation.
-var compileUnibuild = function (isopk, inputSourceArch, packageLoader,
-                                nodeModulesPath, isPortable) {
+var compileUnibuild = Profile( "compile unibuild", function (
+  isopk, inputSourceArch, packageLoader, nodeModulesPath, isPortable) {
   var isApp = ! inputSourceArch.pkg.name;
   var resources = [];
   var js = [];
@@ -915,7 +916,7 @@ var compileUnibuild = function (isopk, inputSourceArch, packageLoader,
   });
 
   return sources;
-};
+});
 
 // Build a PackageSource into a Isopack by running its source files through
 // the appropriate compiler plugins. Once build has completed, any errors
@@ -943,7 +944,7 @@ var compileUnibuild = function (isopk, inputSourceArch, packageLoader,
 // - sources: array of source files (identified by their path on local
 //   disk) that were used by the compilation (the source files you'd have to
 //   ship to a different machine to replicate the build there)
-compiler.compile = function (packageSource, options) {
+compiler.compile = Profile("compile", function (packageSource, options) {
   buildmessage.assertInCapture();
   var sources = [];
   var pluginWatchSet = packageSource.pluginWatchSet.clone();
@@ -1091,7 +1092,7 @@ compiler.compile = function (packageSource, options) {
     sources: _.uniq(sources),
     isopack: isopk
   };
-};
+});
 
 // Given an object mapping package name to version, return an object
 // that includes all the packages that contain plugins, according to the
@@ -1124,8 +1125,8 @@ var getPluginProviders = function (versions, whichCatalog) {
 // objects with keys 'name', 'version' (the latter a version
 // string). Yes, it is possible that multiple versions of some other
 // package might be build-time dependencies (because of plugins).
-compiler.getBuildOrderConstraints = function (
-    packageSource, constraintSolverOpts) {
+compiler.getBuildOrderConstraints = Profile("build order constrs", function (
+  packageSource, constraintSolverOpts) {
   constraintSolverOpts = constraintSolverOpts || {};
   buildmessage.assertInCapture();
 
@@ -1158,7 +1159,7 @@ compiler.getBuildOrderConstraints = function (
   });
 
   return ret;
-};
+});
 
 // Check to see if a particular build of a package is up to date (that
 // is, if the source files haven't changed and the build-time
@@ -1167,8 +1168,9 @@ compiler.getBuildOrderConstraints = function (
 // identical code). True if we have dependency info and it
 // says that the package is up-to-date. False if a source file or
 // build-time dependency has changed.
-compiler.checkUpToDate = function (
-    packageSource, isopk, constraintSolverOpts) {
+compiler.checkUpToDate = Profile(
+  "check up to date",
+  function (packageSource, isopk, constraintSolverOpts) {
   buildmessage.assertInCapture();
 
   if (isopk.forceNotUpToDate) {
@@ -1277,4 +1279,4 @@ compiler.checkUpToDate = function (
   // runtime performance overhead to this extra check.)
 
   return true;
-};
+});
