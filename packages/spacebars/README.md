@@ -37,7 +37,7 @@ As illustrated by the above example, there are four major types of template tags
 
 Spacebars templates update reactively at a fine-grained level in response to changing data.
 
-Each template tag's DOM is updated automatically when it evaluates to a new value, while avoiding unnecessary re-rendering as much as possible.  For example, a double-braced tag replace its text node when its text value changes.  An `#if` re-renders its contents only when the condition changes from truthy to falsy or vice versa.
+Each template tag's DOM is updated automatically when it evaluates to a new value, while avoiding unnecessary re-rendering as much as possible.  For example, a double-braced tag replaces its text node when its text value changes.  An `#if` re-renders its contents only when the condition changes from truthy to falsy or vice versa.
 
 ## Identifiers and Paths
 
